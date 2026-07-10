@@ -24,7 +24,7 @@ Vulca is an agent's hands and eyes, not its brain. Before proposing, confirm:
 - [ ] The feature exposes information through an **MCP tool schema** or a **skill body**, not by embedding logic in Python SDK code.
 - [ ] There's a **dogfooding story** — a real cultural-evaluation workflow this unblocks. Describe it in one sentence.
 
-If any of these are "no" but you still think the feature belongs, open a **[Discussion](https://github.com/vulca-org/vulca/discussions)** first instead of an issue — we'll figure out together whether it's an agent-layer or SDK-layer concern.
+If any of these are "no" but you still think the feature belongs, open a **[Discussion](https://github.com/vulca-org/vulca-visual-control-sdk/discussions)** first instead of an issue — we'll figure out together whether it's an agent-layer or SDK-layer concern.
 
 See [CONTRIBUTING.md § Anti-patterns](../../CONTRIBUTING.md#anti-patterns--what-will-not-be-merged) for what won't be merged.
 

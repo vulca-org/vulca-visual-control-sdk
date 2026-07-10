@@ -133,9 +133,9 @@ select = ["E9", "F63", "F7", "F82"]
 
 [project.urls]
 Homepage = "https://vulcaart.art"
-Documentation = "https://github.com/vulca-org/vulca"
-Repository = "https://github.com/vulca-org/vulca"
-Issues = "https://github.com/vulca-org/vulca/issues"
+Documentation = "https://github.com/vulca-org/vulca-visual-control-sdk"
+Repository = "https://github.com/vulca-org/vulca-visual-control-sdk"
+Issues = "https://github.com/vulca-org/vulca-visual-control-sdk/issues"
 
 [project.scripts]
 vulca = "vulca.cli:main"

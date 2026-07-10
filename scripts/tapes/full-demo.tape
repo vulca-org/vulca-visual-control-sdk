@@ -100,6 +100,6 @@ Enter
 Sleep 2s
 
 # === Outro ===
-Type "# github.com/vulca-org/vulca | pip install vulca"
+Type "# github.com/vulca-org/vulca-visual-control-sdk | pip install vulca"
 Enter
 Sleep 3s

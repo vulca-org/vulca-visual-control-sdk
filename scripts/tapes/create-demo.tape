@@ -65,6 +65,6 @@ Type '#     → Add a poem (题画诗) for poetry-calligraphy-painting-seal harm
 Enter
 Sleep 3s
 
-Type "# github.com/vulca-org/vulca"
+Type "# github.com/vulca-org/vulca-visual-control-sdk"
 Enter
 Sleep 2s

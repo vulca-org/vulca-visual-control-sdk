@@ -156,9 +156,9 @@ Replace the default SDXL VAE with [`madebyollin/sdxl-vae-fp16-fix`](https://hugg
 
 During this investigation we also fixed three VULCA bugs that compound with MPS issues:
 
-- **ANCHOR hallucination** — Prompt section headers `[CANVAS ANCHOR]` caused SDXL to paint literal ship anchors. Renamed to `[CANVAS]`. ([`b168178`](https://github.com/vulca-org/vulca/commit/b168178))
-- **CLIP token overflow** — Structured prompts (120+ tokens) exceed SDXL CLIP's 77-token limit. Added CLIP-aware flat prompt mode for ComfyUI. ([`74f9952`](https://github.com/vulca-org/vulca/commit/74f9952))
-- **Background keying** — Luminance keying on background layers made white paper transparent. Added `content_type` guard. ([`42e0e3d`](https://github.com/vulca-org/vulca/commit/42e0e3d))
+- **ANCHOR hallucination** — Prompt section headers `[CANVAS ANCHOR]` caused SDXL to paint literal ship anchors. Renamed to `[CANVAS]`. ([`b168178`](https://github.com/vulca-org/vulca-visual-control-sdk/commit/b168178))
+- **CLIP token overflow** — Structured prompts (120+ tokens) exceed SDXL CLIP's 77-token limit. Added CLIP-aware flat prompt mode for ComfyUI. ([`74f9952`](https://github.com/vulca-org/vulca-visual-control-sdk/commit/74f9952))
+- **Background keying** — Luminance keying on background layers made white paper transparent. Added `content_type` guard. ([`42e0e3d`](https://github.com/vulca-org/vulca-visual-control-sdk/commit/42e0e3d))
 
 ---
 
