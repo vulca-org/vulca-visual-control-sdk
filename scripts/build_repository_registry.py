@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import argparse
 import re
+import subprocess
 import sys
 import tomllib
 from collections.abc import Iterator, Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol
 
 import yaml
 
@@ -51,6 +54,33 @@ PUBLIC_RECORD_FIELDS = {
     "public_url",
     "notes",
 }
+PRIVATE_SEED_TOP_LEVEL_FIELDS = {"schema_version", "repositories"}
+PRIVATE_SEED_FIELDS = {
+    "id",
+    "full_name",
+    "visibility",
+    "lifecycle",
+    "local_roots",
+    "expected_remote",
+    "sensitivity",
+    "release_boundary",
+    "sync_relationship",
+}
+VOLATILE_PRIVATE_FIELDS = {
+    "observed_at",
+    "availability",
+    "remote_url",
+    "current_branch",
+    "head",
+    "comparison_ref",
+    "ahead",
+    "behind",
+    "worktree_state",
+    "prunable",
+    "recommended_action",
+}
+PRIVATE_VISIBILITIES = {"public", "private", "local-only"}
+PRIVATE_SENSITIVITIES = {"public", "internal", "restricted"}
 _CREDENTIAL_FIELD_PATTERN = re.compile(r"(?:token|password|secret|api[-_]?key|credential)", re.IGNORECASE)
 _CREDENTIAL_VALUE_PATTERN = re.compile(
     r"(?:github_pat_|gh[pousr]_[A-Za-z0-9]|sk-[A-Za-z0-9]|AIza[0-9A-Za-z_-])",
@@ -67,6 +97,52 @@ class RegistryError(ValueError):
     """Raised when registry input cannot be validated safely."""
 
 
+@dataclass(frozen=True)
+class CommandResult:
+    """Bounded subprocess result that never retains raw stderr."""
+
+    returncode: int
+    stdout: str = ""
+    stderr_category: str | None = None
+
+
+class CommandRunner(Protocol):
+    """Injectable boundary for fixed read-only external operations."""
+
+    def run(self, args: Sequence[str], timeout: int) -> CommandResult:
+        raise NotImplementedError
+
+
+class SubprocessRunner:
+    """Execute list-based commands without a shell and with bounded errors."""
+
+    def run(self, args: Sequence[str], timeout: int) -> CommandResult:
+        if isinstance(args, (str, bytes)) or not args or any(not isinstance(arg, str) for arg in args):
+            raise RegistryError("command must be a non-empty argument list")
+        try:
+            completed = subprocess.run(
+                list(args),
+                shell=False,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            return CommandResult(returncode=124, stderr_category="timeout")
+        except FileNotFoundError:
+            return CommandResult(returncode=127, stderr_category="executable-not-found")
+        except OSError:
+            return CommandResult(returncode=126, stderr_category="execution-error")
+
+        category = None if completed.returncode == 0 else "command-failed"
+        return CommandResult(
+            returncode=completed.returncode,
+            stdout=completed.stdout,
+            stderr_category=category,
+        )
+
+
 def load_yaml(path: Path) -> dict[str, object]:
     """Load a YAML mapping and convert parse failures into bounded errors."""
     try:
@@ -78,6 +154,13 @@ def load_yaml(path: Path) -> dict[str, object]:
     if not isinstance(loaded, dict):
         raise RegistryError("registry YAML root must be a mapping")
     return loaded
+
+
+def load_private_seeds(path: Path) -> dict[str, object]:
+    """Load and validate a stable private repository seed file."""
+    data = load_yaml(path)
+    validate_private_seeds(data)
+    return data
 
 
 def walk_values(value: object, field: str = "root") -> Iterator[tuple[str, object]]:
@@ -137,6 +220,97 @@ def _require_string_list(record: Mapping[str, object], field: str, record_id: st
     if not isinstance(value, list) or any(not isinstance(item, str) or not item.strip() for item in value):
         raise RegistryError(f"record {record_id}: {field} must be a list of non-empty strings")
     return value
+
+
+def _validate_private_value_safety(data: dict[str, object]) -> None:
+    for field, value in walk_values(data):
+        if not isinstance(value, str):
+            continue
+        if _CREDENTIAL_VALUE_PATTERN.search(value):
+            raise _error("credential-like value", field)
+        lowered = value.casefold()
+        if any(fragment in lowered for fragment in (".env", "credential-file", "session-file")):
+            raise _error("forbidden private payload reference", field)
+
+
+def validate_private_seeds(data: dict[str, object]) -> None:
+    """Validate stable private identities while rejecting operational state."""
+    _validate_private_value_safety(data)
+    if set(data) != PRIVATE_SEED_TOP_LEVEL_FIELDS:
+        raise RegistryError("private seed file has invalid top-level fields")
+    if data.get("schema_version") != 1:
+        raise RegistryError("private seed schema_version must be 1")
+    repositories = data.get("repositories")
+    if not isinstance(repositories, list) or not repositories:
+        raise RegistryError("private repositories must be a non-empty list")
+
+    seen_ids: set[str] = set()
+    for index, record in enumerate(repositories):
+        if not isinstance(record, dict):
+            raise RegistryError(f"private seed {index} must be a mapping")
+        volatile = set(record) & VOLATILE_PRIVATE_FIELDS
+        if volatile:
+            raise RegistryError(f"private seed {index} contains volatile fields")
+        seed_id = str(record.get("id", f"index-{index}"))
+        if set(record) != PRIVATE_SEED_FIELDS:
+            raise RegistryError(f"private seed {seed_id} has invalid stable fields")
+        seed_id = _require_string(record, "id", seed_id)
+        if not _PUBLIC_ID.fullmatch(seed_id):
+            raise RegistryError(f"private seed {seed_id}: id must be lowercase kebab-case")
+        if seed_id in seen_ids:
+            raise RegistryError(f"duplicate private seed id: {seed_id}")
+        seen_ids.add(seed_id)
+
+        visibility = _require_string(record, "visibility", seed_id)
+        lifecycle = _require_string(record, "lifecycle", seed_id)
+        sensitivity = _require_string(record, "sensitivity", seed_id)
+        _require_string(record, "release_boundary", seed_id)
+        _require_string(record, "sync_relationship", seed_id)
+        if visibility not in PRIVATE_VISIBILITIES:
+            raise RegistryError(f"private seed {seed_id}: unsupported visibility")
+        if lifecycle not in PUBLIC_LIFECYCLES:
+            raise RegistryError(f"private seed {seed_id}: unsupported lifecycle")
+        if sensitivity not in PRIVATE_SENSITIVITIES:
+            raise RegistryError(f"private seed {seed_id}: unsupported sensitivity")
+
+        roots = record.get("local_roots")
+        if not isinstance(roots, list) or not roots:
+            raise RegistryError(f"private seed {seed_id}: local_roots must be non-empty")
+        if any(not isinstance(root, str) or not Path(root).is_absolute() for root in roots):
+            raise RegistryError(f"private seed {seed_id}: local_roots must contain absolute paths")
+
+        full_name = record.get("full_name")
+        expected_remote = record.get("expected_remote")
+        if visibility == "local-only":
+            if full_name is not None or expected_remote is not None:
+                raise RegistryError(f"private seed {seed_id}: local-only identity must be null")
+        else:
+            if not isinstance(full_name, str) or not re.fullmatch(r"[^/\s]+/[^/\s]+", full_name):
+                raise RegistryError(f"private seed {seed_id}: full_name must be owner/repository")
+            if not isinstance(expected_remote, str) or not expected_remote.strip():
+                raise RegistryError(f"private seed {seed_id}: expected_remote must be a string")
+
+
+def private_seed_denylist(data: dict[str, object]) -> set[str]:
+    """Extract non-public identities that must never appear in public output."""
+    validate_private_seeds(data)
+    denied: set[str] = set()
+    repositories = data["repositories"]
+    assert isinstance(repositories, list)
+    for record in repositories:
+        if record["visibility"] == "public":
+            continue
+        for field in ("id", "full_name", "expected_remote"):
+            value = record[field]
+            if isinstance(value, str):
+                denied.add(value)
+        full_name = record["full_name"]
+        if isinstance(full_name, str):
+            denied.add(full_name.rsplit("/", 1)[-1])
+        for root in record["local_roots"]:
+            denied.add(root)
+            denied.add(Path(root).name)
+    return denied
 
 
 def validate_public_registry(

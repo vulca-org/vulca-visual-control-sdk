@@ -1,14 +1,20 @@
+import subprocess
 from pathlib import Path
 
 import pytest
 
 from scripts.build_repository_registry import (
+    CommandResult,
     RegistryError,
+    SubprocessRunner,
     build_public_registry,
     derive_sdk_facts,
     load_yaml,
+    load_private_seeds,
     main,
+    private_seed_denylist,
     render_public_registry,
+    validate_private_seeds,
     validate_public_registry,
 )
 
@@ -16,6 +22,19 @@ from scripts.build_repository_registry import (
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PUBLIC_SOURCE = REPO_ROOT / "docs/product/repository-registry.yaml"
 PUBLIC_OUTPUT = REPO_ROOT / "docs/product/repository-registry.md"
+VOLATILE_PRIVATE_FIELDS = (
+    "observed_at",
+    "availability",
+    "remote_url",
+    "current_branch",
+    "head",
+    "comparison_ref",
+    "ahead",
+    "behind",
+    "worktree_state",
+    "prunable",
+    "recommended_action",
+)
 
 
 def valid_public_registry() -> dict[str, object]:
@@ -37,6 +56,25 @@ def valid_public_registry() -> dict[str, object]:
                 "release_channels": ["PyPI", "GitHub tags"],
                 "public_url": "https://github.com/vulca-org/vulca",
                 "notes": "Canonical public product surface.",
+            }
+        ],
+    }
+
+
+def valid_private_seeds(root: str = "/tmp/example repository") -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "repositories": [
+            {
+                "id": "example-private-platform",
+                "full_name": "example/private-platform",
+                "visibility": "private",
+                "lifecycle": "active-supporting",
+                "local_roots": [root],
+                "expected_remote": "https://github.com/example/private-platform.git",
+                "sensitivity": "internal",
+                "release_boundary": "explicit owner approval",
+                "sync_relationship": "exports selected public-safe artifacts",
             }
         ],
     }
@@ -297,3 +335,134 @@ def test_public_cli_does_not_expand_home_paths(monkeypatch: pytest.MonkeyPatch, 
 
     assert main(["--source", str(PUBLIC_SOURCE), "--output", str(output)]) == 0
     assert output.is_file()
+
+
+def test_private_seed_validation_accepts_stable_fields() -> None:
+    validate_private_seeds(valid_private_seeds())
+
+
+@pytest.mark.parametrize("field", VOLATILE_PRIVATE_FIELDS)
+def test_private_seed_validation_rejects_volatile_fields(field: str) -> None:
+    data = valid_private_seeds()
+    repositories = data["repositories"]
+    assert isinstance(repositories, list)
+    repositories[0][field] = "unstable"
+
+    with pytest.raises(RegistryError, match="volatile"):
+        validate_private_seeds(data)
+
+
+def test_private_seed_validation_rejects_duplicate_ids() -> None:
+    data = valid_private_seeds()
+    repositories = data["repositories"]
+    assert isinstance(repositories, list)
+    repositories.append(dict(repositories[0]))
+
+    with pytest.raises(RegistryError, match="duplicate"):
+        validate_private_seeds(data)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("local_roots", []),
+        ("visibility", "unknown"),
+        ("sensitivity", "unbounded"),
+    ],
+)
+def test_private_seed_validation_rejects_invalid_stable_values(field: str, value: object) -> None:
+    data = valid_private_seeds()
+    repositories = data["repositories"]
+    assert isinstance(repositories, list)
+    repositories[0][field] = value
+
+    with pytest.raises(RegistryError):
+        validate_private_seeds(data)
+
+
+def test_private_seed_validation_does_not_echo_secret_values() -> None:
+    secret = "github_pat_private_value_that_must_not_be_repeated"
+    data = valid_private_seeds()
+    repositories = data["repositories"]
+    assert isinstance(repositories, list)
+    repositories[0]["release_boundary"] = secret
+
+    with pytest.raises(RegistryError) as exc_info:
+        validate_private_seeds(data)
+
+    assert secret not in str(exc_info.value)
+
+
+def test_load_private_seeds_validates_input(tmp_path: Path) -> None:
+    source = tmp_path / "seeds.yaml"
+    source.write_text(
+        "schema_version: 1\nrepositories:\n  - id: incomplete\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RegistryError):
+        load_private_seeds(source)
+
+
+def test_private_seed_denylist_contains_private_identity_and_remote() -> None:
+    denylist = private_seed_denylist(valid_private_seeds())
+
+    assert "example/private-platform" in denylist
+    assert "https://github.com/example/private-platform.git" in denylist
+    assert "private-platform" in denylist
+
+
+def test_subprocess_runner_uses_safe_list_arguments(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        return subprocess.CompletedProcess(args, 0, stdout="ok\n", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    result = SubprocessRunner().run(
+        ["git", "-C", "/tmp/example repository", "status"],
+        timeout=10,
+    )
+
+    assert result == CommandResult(returncode=0, stdout="ok\n")
+    assert captured["args"] == ["git", "-C", "/tmp/example repository", "status"]
+    assert captured["kwargs"] == {
+        "shell": False,
+        "capture_output": True,
+        "text": True,
+        "timeout": 10,
+        "check": False,
+    }
+
+
+def test_subprocess_runner_rejects_command_strings() -> None:
+    with pytest.raises(RegistryError, match="argument list"):
+        SubprocessRunner().run("git status", timeout=10)
+
+
+def test_subprocess_runner_bounds_timeout_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    def raise_timeout(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        raise subprocess.TimeoutExpired(cmd=["git", "status"], timeout=10, stderr="sensitive")
+
+    monkeypatch.setattr(subprocess, "run", raise_timeout)
+
+    assert SubprocessRunner().run(["git", "status"], timeout=10) == CommandResult(
+        returncode=124,
+        stderr_category="timeout",
+    )
+
+
+def test_subprocess_runner_bounds_missing_executable(monkeypatch: pytest.MonkeyPatch) -> None:
+    def raise_missing(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        raise FileNotFoundError("PATH and executable details")
+
+    monkeypatch.setattr(subprocess, "run", raise_missing)
+
+    assert SubprocessRunner().run(["git", "status"], timeout=10) == CommandResult(
+        returncode=127,
+        stderr_category="executable-not-found",
+    )
