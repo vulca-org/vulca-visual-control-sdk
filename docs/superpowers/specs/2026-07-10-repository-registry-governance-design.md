@@ -1,8 +1,8 @@
 # Repository Registry Governance Design
 
-**Status:** Approved design
+**Status:** Approved revision
 **Date:** 2026-07-10
-**Scope:** Public repository registry plus a local private supplement
+**Scope:** Stable public repository registry plus on-demand private state snapshots
 
 ## Problem
 
@@ -31,11 +31,11 @@ This creates observable drift:
 3. Record what each repository is authoritative for and how it synchronizes.
 4. Derive volatile SDK facts, including the package version and MCP tool count,
    from code instead of duplicating them by hand.
-5. Maintain a local private supplement for private repositories, local paths,
-   worktrees, branch state, and cleanup priorities.
+5. Maintain stable local scan seeds for private repositories and discover
+   branches, worktrees, and cleanup signals only when a snapshot is requested.
 6. Fail closed when public output contains local or private operational data.
-7. Keep generation deterministic and testable without modifying repositories or
-   contacting remote services.
+7. Keep public generation deterministic and private scanning read-only,
+   testable, and non-blocking for normal feature development.
 
 ## Non-Goals
 
@@ -49,11 +49,16 @@ This creates observable drift:
   current state.
 - Building a general asset inventory for datasets, PDFs, screenshots, generated
   images, or application materials.
+- Requiring developers to update branch, HEAD, ahead/behind, or worktree state
+  after ordinary feature commits.
+- Running a daemon, background monitor, database, or mandatory private scan in
+  CI.
 
 ## Chosen Approach
 
-Use a structured public source plus a generated public document, and reuse the
-same conceptual schema for an explicitly invoked local private supplement.
+Use a structured public source plus a generated public document. Keep a small
+local seed file for stable private identities and repository roots, then create
+fresh operational snapshots only when explicitly requested.
 
 The public repository contains:
 
@@ -64,17 +69,18 @@ docs/product/repository-registry.yaml
   -> tests/test_repository_registry.py
 ```
 
-The local private layer contains:
+The local private layer contains stable seeds and disposable snapshots:
 
 ```text
-~/.vulca/repository-registry.private.yaml
-  -> scripts/build_repository_registry.py --private-source ... --private-output ...
-  -> ~/.vulca/repository-registry.private.md
+~/.vulca/repository-registry-seeds.private.yaml
+  -> scripts/build_repository_registry.py --snapshot-private --private-seeds ...
+  -> ~/.vulca/repository-registry-snapshot.private.json
+  -> ~/.vulca/repository-registry-snapshot.private.md
 ```
 
-The default generator invocation reads and writes only the public files. Private
-generation requires explicit private input and output arguments. No private
-path is a default.
+The default invocation reads and writes only public files. Private scanning
+requires an explicit snapshot flag, seed path, and output paths. It never runs
+in CI and never runs as a side effect of public generation.
 
 ## Public Registry Contract
 
@@ -121,30 +127,55 @@ iteration does not inspect remote tags, GitHub Releases, PyPI, or copied platfor
 subtrees at generation time. Those are audit inputs, not deterministic build
 inputs.
 
-## Private Supplement Contract
+## Private Seed Contract
 
-The private YAML uses the public identity and lifecycle fields where applicable,
-then adds operational fields:
+The private seed YAML stores only facts that remain stable across ordinary
+development:
 
 | Field | Meaning |
 | --- | --- |
-| `local_path` | Local repository or worktree path |
-| `remote_url` | Configured Git remote, if any |
+| `id` | Stable private identifier |
+| `full_name` | GitHub owner/repository identity when one exists |
 | `visibility` | `public`, `private`, or `local-only` |
-| `default_branch` | Remote default branch when known |
-| `current_branch` | Checked-out branch or `detached` |
-| `head` | Observed commit identifier |
-| `ahead` / `behind` | Observed relationship to the named comparison ref |
-| `worktree_state` | `clean`, `modified`, `untracked`, or `mixed` |
+| `lifecycle` | Repository lifecycle classification |
+| `local_roots` | Canonical local checkout roots to scan |
+| `expected_remote` | Expected Git remote identity, used only for mismatch detection |
 | `sensitivity` | `public`, `internal`, or `restricted` |
 | `release_boundary` | Human or project gate that blocks public treatment |
 | `sync_relationship` | Relationship to a canonical public repository |
-| `cleanup_priority` | `none`, `low`, `medium`, or `high` |
-| `recommended_action` | Bounded next action; never an automatic mutation |
 
-The private supplement must not store tokens, credentials, environment values,
-email content, private session content, or copied evidence payloads. It records
-state and routing, not secrets or artifact bodies.
+The seed file does not store HEADs, current branches, ahead/behind counts,
+worktree cleanliness, timestamps, or cleanup priorities. It changes only when a
+repository is added, migrated, archived, renamed, moved locally, or assigned a
+different authority/release role.
+
+## Private Snapshot Contract
+
+An explicit private scan expands each seed into a timestamped JSON and Markdown
+snapshot. The scanner discovers:
+
+| Field | Meaning |
+| --- | --- |
+| `observed_at` | UTC observation timestamp for the whole snapshot |
+| `availability` | `available`, `missing`, or `not-a-repository` |
+| `local_path` | Observed checkout or worktree path |
+| `remote_url` | Configured remote, if readable |
+| `current_branch` | Checked-out branch or `detached` |
+| `head` | Observed commit identifier |
+| `comparison_ref` | Local tracking ref used for comparison, if present |
+| `ahead` / `behind` | Counts against `comparison_ref`, or `unknown` |
+| `worktree_state` | `clean`, `modified`, `untracked`, or `mixed` |
+| `prunable` | Whether Git reports a stale worktree record |
+| `recommended_action` | Non-mutating, human-reviewed next action |
+
+The scanner discovers additional worktrees through `git worktree list
+--porcelain`; they are not enumerated in the seed file. A missing checkout is
+recorded in the snapshot rather than causing the public registry or normal CI to
+fail.
+
+The seed and snapshot files must not store tokens, credentials, environment
+values, email content, private session content, or copied evidence payloads.
+They record identity, state, and routing only.
 
 ## Public-Safety Validation
 
@@ -164,10 +195,10 @@ Public generation fails when any of the following is present:
 - a migrated record without a public replacement or migration note;
 - an archived record that declares an active release channel.
 
-When the optional private source is available during a local validation run,
-its repository names and URLs are also treated as a denylist for public output.
-CI cannot rely on the private file, so structural leak checks remain mandatory
-without it.
+When private seeds are explicitly supplied during a local validation run, their
+non-public repository names and URLs are also treated as a denylist for public
+output. CI cannot rely on the seed file, so structural leak checks remain
+mandatory without it.
 
 ## Generation Behavior
 
@@ -184,10 +215,33 @@ The `--check` mode performs the same work without writing and exits non-zero whe
 the committed Markdown is stale. Output contains no runtime timestamp; the
 manually maintained `verified_on` value prevents nondeterministic diffs.
 
-Private generation is explicit. If private arguments are omitted, the generator
+Private scanning is explicit. If `--snapshot-private` is omitted, the generator
 does not inspect `~/.vulca`, Git configuration, GitHub authentication, or the
-filesystem outside the current repository. If a requested private source is
-missing or invalid, private generation fails without changing the public output.
+filesystem outside the current repository.
+
+With `--snapshot-private`, the scanner:
+
+1. loads and validates the stable private seeds;
+2. runs only read-only local Git commands against configured roots;
+3. discovers linked worktrees through `git worktree list --porcelain`;
+4. records local tracking-ref comparison when it exists, otherwise uses
+   `unknown` without fetching;
+5. renders a JSON authority artifact and a Markdown reading view with the same
+   `observed_at` timestamp;
+6. writes snapshots only after complete validation.
+
+GitHub refresh is a separate `--refresh-github` opt-in. It may call the `gh` CLI
+to refresh visibility, archival state, and default-branch metadata, but it never
+runs by default and never changes the stable seed file automatically. Failure or
+missing authentication is reported in the private snapshot and does not affect
+public generation.
+
+All external commands use a single injected command runner with list-based
+arguments, `shell=False`, captured text output, and bounded timeouts. Local Git
+commands have a 10-second timeout; optional `gh` calls have a 30-second timeout.
+The scanner accepts no free-form command fragments and supports only the fixed
+read-only Git/GitHub operations named in this design. Paths are passed as single
+arguments so spaces or punctuation cannot become shell syntax.
 
 ## Error Handling
 
@@ -198,6 +252,12 @@ missing or invalid, private generation fails without changing the public output.
 - Markdown drift under `--check` reports the expected regeneration command.
 - Partial output is never written. The complete rendered content is validated
   before `Path.write_text` is called.
+- A missing local checkout becomes `availability=missing` in the private
+  snapshot instead of aborting the scan.
+- A Git command timeout or unreadable checkout records a bounded error category
+  without echoing command environment or credential values.
+- Optional GitHub refresh failure is recorded as unavailable external metadata;
+  local Git discovery still completes.
 
 ## Testing Strategy
 
@@ -213,11 +273,22 @@ missing or invalid, private generation fails without changing the public output.
 8. absolute paths and private-only fields fail;
 9. credential-like content fails without being repeated in the error;
 10. migrated and archived lifecycle invariants fail when incomplete;
-11. an optional private denylist blocks a matching public record;
-12. a missing explicitly requested private source leaves public files unchanged.
+11. optional private seeds denylist a matching non-public record;
+12. private seeds reject volatile HEAD, branch, ahead/behind, and worktree-state
+    fields;
+13. a temporary Git repository produces branch, HEAD, remote, and cleanliness
+    facts without mutation;
+14. linked and prunable worktree porcelain fixtures are parsed correctly;
+15. missing repositories produce `availability=missing` without public failure;
+16. JSON and Markdown snapshots share one timestamp and the same record set;
+17. optional GitHub refresh is isolated behind an injected command runner and is
+    never invoked by public generation;
+18. command construction uses list arguments, `shell=False`, fixed allowlisted
+    operations, and preserves paths containing spaces as one argument.
 
-Tests use temporary files for unsafe fixtures. No test reads the real private
-supplement, user home directory, Git configuration, network, or credentials.
+Tests use temporary Git repositories and injected command-runner fixtures. No
+test reads the real private seed file, user home directory, global Git
+configuration, network, GitHub authentication, or credentials.
 
 ## Initial Public Registry Scope
 
@@ -245,16 +316,23 @@ replacement when one exists.
 4. Review the Markdown diff for public-safety and lifecycle accuracy.
 5. Commit YAML, generated Markdown, generator, and tests together.
 
-Private maintenance uses explicit paths and remains outside Git:
+Private seeds change only for structural events: new repository, rename,
+migration, archival, local-root move, authority change, or release-boundary
+change. Ordinary commits and worktrees require no seed edit.
+
+Private snapshots remain outside Git and are refreshed on demand:
 
 ```bash
 python scripts/build_repository_registry.py \
-  --private-source ~/.vulca/repository-registry.private.yaml \
-  --private-output ~/.vulca/repository-registry.private.md
+  --snapshot-private \
+  --private-seeds ~/.vulca/repository-registry-seeds.private.yaml \
+  --private-json ~/.vulca/repository-registry-snapshot.private.json \
+  --private-markdown ~/.vulca/repository-registry-snapshot.private.md
 ```
 
-The generator never performs repository cleanup. `recommended_action` remains a
-human-reviewed queue for a later task.
+Add `--refresh-github` only when current GitHub metadata is needed and
+authentication is already available. The generator never performs repository
+cleanup. `recommended_action` remains a human-reviewed queue for a later task.
 
 ## Acceptance Criteria
 
@@ -268,7 +346,13 @@ human-reviewed queue for a later task.
 - `--check` detects stale generated output.
 - Invalid lifecycle, duplicate, and leak-prone records fail with actionable
   errors.
-- Private generation is opt-in and writes only to the explicitly supplied local
-  output path.
+- Private scanning is opt-in, discovers current worktrees without manually
+  listing them, and writes only to explicitly supplied local snapshot paths.
+- Ordinary feature commits do not require public-registry or private-seed
+  updates.
+- Missing private repositories, dirty worktrees, and unavailable GitHub metadata
+  do not fail public generation or CI.
+- Private JSON and Markdown outputs identify their observation time and never
+  present dynamic state as timeless authority.
 - No registry command fetches, checks out, pushes, deletes, or otherwise mutates
   a Git repository.
