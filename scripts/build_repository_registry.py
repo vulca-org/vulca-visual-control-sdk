@@ -81,6 +81,18 @@ VOLATILE_PRIVATE_FIELDS = {
 }
 PRIVATE_VISIBILITIES = {"public", "private", "local-only"}
 PRIVATE_SENSITIVITIES = {"public", "internal", "restricted"}
+ALLOWED_GIT_OPERATIONS: dict[str, set[tuple[str, ...]]] = {
+    "rev-parse": {
+        ("--is-inside-work-tree",),
+        ("HEAD",),
+        ("--abbrev-ref", "--symbolic-full-name", "@{upstream}"),
+    },
+    "branch": {("--show-current",)},
+    "remote": {("get-url", "origin")},
+    "status": {("--porcelain=v1",)},
+    "rev-list": {("--left-right", "--count", "@{upstream}...HEAD")},
+    "worktree": {("list", "--porcelain")},
+}
 _CREDENTIAL_FIELD_PATTERN = re.compile(r"(?:token|password|secret|api[-_]?key|credential)", re.IGNORECASE)
 _CREDENTIAL_VALUE_PATTERN = re.compile(
     r"(?:github_pat_|gh[pousr]_[A-Za-z0-9]|sk-[A-Za-z0-9]|AIza[0-9A-Za-z_-])",
@@ -311,6 +323,199 @@ def private_seed_denylist(data: dict[str, object]) -> set[str]:
             denied.add(root)
             denied.add(Path(root).name)
     return denied
+
+
+def git_command(
+    runner: CommandRunner,
+    root: Path,
+    operation: str,
+    *arguments: str,
+) -> CommandResult:
+    """Run one fixed read-only Git operation with a 10-second timeout."""
+    argument_tuple = tuple(arguments)
+    if operation not in ALLOWED_GIT_OPERATIONS or argument_tuple not in ALLOWED_GIT_OPERATIONS[operation]:
+        raise RegistryError("Git operation is not allowlisted")
+    return runner.run(["git", "-C", str(root), operation, *arguments], timeout=10)
+
+
+def classify_status(porcelain: str) -> str:
+    """Classify porcelain-v1 output without retaining file names."""
+    lines = [line for line in porcelain.splitlines() if line]
+    if not lines:
+        return "clean"
+    has_untracked = any(line.startswith("??") for line in lines)
+    has_tracked = any(not line.startswith("??") for line in lines)
+    if has_untracked and has_tracked:
+        return "mixed"
+    if has_untracked:
+        return "untracked"
+    return "modified"
+
+
+def parse_worktree_porcelain(text: str) -> list[dict[str, object]]:
+    """Parse `git worktree list --porcelain` while preserving path spaces."""
+    records: list[dict[str, object]] = []
+    current: dict[str, object] = {}
+
+    def finish() -> None:
+        if not current:
+            return
+        if "local_path" not in current:
+            raise RegistryError("worktree record is missing a path")
+        current.setdefault("head", None)
+        current.setdefault("current_branch", "detached")
+        current.setdefault("locked", False)
+        current.setdefault("prunable", False)
+        records.append(dict(current))
+        current.clear()
+
+    for line in text.splitlines():
+        if not line:
+            finish()
+            continue
+        key, separator, value = line.partition(" ")
+        if key == "worktree" and separator:
+            if current:
+                finish()
+            current["local_path"] = value
+        elif key == "HEAD" and separator:
+            current["head"] = value
+        elif key == "branch" and separator:
+            prefix = "refs/heads/"
+            current["current_branch"] = value.removeprefix(prefix)
+        elif key == "detached":
+            current["current_branch"] = "detached"
+        elif key == "locked":
+            current["locked"] = True
+        elif key == "prunable":
+            current["prunable"] = True
+    finish()
+    return records
+
+
+def _normalized_remote(remote: str | None) -> str | None:
+    if remote is None:
+        return None
+    normalized = remote.strip().rstrip("/")
+    if normalized.endswith(".git"):
+        normalized = normalized[:-4]
+    if normalized.startswith("git@") and ":" in normalized:
+        host, path = normalized[4:].split(":", 1)
+        return f"{host.casefold()}/{path.casefold()}"
+    match = re.match(r"https?://([^/]+)/(.+)", normalized, flags=re.IGNORECASE)
+    if match:
+        return f"{match.group(1).casefold()}/{match.group(2).casefold()}"
+    return normalized
+
+
+def recommend_action(record: dict[str, object]) -> str:
+    """Return a non-mutating human-review label for an observed checkout."""
+    if record.get("availability") != "available":
+        return "review-unavailable-checkout"
+    if record.get("prunable") is True:
+        return "review-prunable-record"
+    if record.get("remote_mismatch") is True:
+        return "inspect-remote-mismatch"
+    if record.get("worktree_state") in {"modified", "untracked", "mixed"}:
+        return "review-dirty-worktree"
+    if any(isinstance(record.get(field), int) and record[field] > 0 for field in ("ahead", "behind")):
+        return "review-divergence"
+    if record.get("error_category"):
+        return "review-command-error"
+    return "none"
+
+
+def _unavailable_checkout(path: Path, availability: str, error_category: str | None = None) -> dict[str, object]:
+    record: dict[str, object] = {
+        "availability": availability,
+        "local_path": str(path),
+        "remote_url": None,
+        "current_branch": None,
+        "head": None,
+        "comparison_ref": None,
+        "ahead": "unknown",
+        "behind": "unknown",
+        "worktree_state": "unknown",
+        "prunable": False,
+        "remote_mismatch": False,
+    }
+    if error_category:
+        record["error_category"] = error_category
+    record["recommended_action"] = recommend_action(record)
+    return record
+
+
+def scan_checkout(
+    root: Path,
+    expected_remote: str | None,
+    runner: CommandRunner,
+) -> dict[str, object]:
+    """Observe one checkout using only allowlisted read-only Git commands."""
+    if not root.exists():
+        return _unavailable_checkout(root, "missing")
+    if not root.is_dir():
+        return _unavailable_checkout(root, "not-a-repository")
+
+    inside = git_command(runner, root, "rev-parse", "--is-inside-work-tree")
+    if inside.returncode != 0 or inside.stdout.strip() != "true":
+        return _unavailable_checkout(root, "not-a-repository", inside.stderr_category)
+
+    head_result = git_command(runner, root, "rev-parse", "HEAD")
+    branch_result = git_command(runner, root, "branch", "--show-current")
+    remote_result = git_command(runner, root, "remote", "get-url", "origin")
+    status_result = git_command(runner, root, "status", "--porcelain=v1")
+    upstream_result = git_command(
+        runner,
+        root,
+        "rev-parse",
+        "--abbrev-ref",
+        "--symbolic-full-name",
+        "@{upstream}",
+    )
+
+    head = head_result.stdout.strip() if head_result.returncode == 0 else None
+    branch = branch_result.stdout.strip() if branch_result.returncode == 0 else ""
+    remote = remote_result.stdout.strip() if remote_result.returncode == 0 else None
+    comparison_ref = upstream_result.stdout.strip() if upstream_result.returncode == 0 else None
+    ahead: int | str = "unknown"
+    behind: int | str = "unknown"
+    count_result: CommandResult | None = None
+    if comparison_ref:
+        count_result = git_command(
+            runner,
+            root,
+            "rev-list",
+            "--left-right",
+            "--count",
+            "@{upstream}...HEAD",
+        )
+        if count_result.returncode == 0:
+            counts = count_result.stdout.split()
+            if len(counts) == 2 and all(count.isdigit() for count in counts):
+                behind, ahead = (int(counts[0]), int(counts[1]))
+
+    results = (head_result, branch_result, status_result, count_result)
+    error_category = next(
+        (result.stderr_category for result in results if result is not None and result.stderr_category),
+        None,
+    )
+    record = {
+        "availability": "available",
+        "local_path": str(root),
+        "remote_url": remote,
+        "current_branch": branch or "detached",
+        "head": head,
+        "comparison_ref": comparison_ref,
+        "ahead": ahead,
+        "behind": behind,
+        "worktree_state": classify_status(status_result.stdout) if status_result.returncode == 0 else "unknown",
+        "prunable": False,
+        "remote_mismatch": _normalized_remote(remote) != _normalized_remote(expected_remote),
+    }
+    if error_category:
+        record["error_category"] = error_category
+    record["recommended_action"] = recommend_action(record)
+    return record
 
 
 def validate_public_registry(
