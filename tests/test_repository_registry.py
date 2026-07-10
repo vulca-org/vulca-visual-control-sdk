@@ -1,5 +1,10 @@
+import builtins
+import importlib.util
 import json
 import subprocess
+import sys
+import tomllib
+import types
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -888,3 +893,35 @@ def test_public_render_excludes_synthetic_private_denylist() -> None:
     rendered = build_public_registry(PUBLIC_SOURCE, REPO_ROOT, private_denylist=denylist)
 
     assert all(value not in rendered for value in denylist)
+
+
+def test_registry_script_falls_back_to_tomli_on_python310(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_tomli = types.ModuleType("tomli")
+    fake_tomli.loads = lambda text: {"project": {"version": "test"}}  # type: ignore[attr-defined]
+    real_import = builtins.__import__
+
+    def python310_import(name: str, *args: object, **kwargs: object) -> object:
+        if name == "tomllib":
+            raise ModuleNotFoundError("simulated Python 3.10")
+        if name == "tomli":
+            return fake_tomli
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", python310_import)
+    module_path = REPO_ROOT / "scripts/build_repository_registry.py"
+    spec = importlib.util.spec_from_file_location("registry_python310_probe", module_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, module)
+
+    spec.loader.exec_module(module)
+
+    assert module.tomllib is fake_tomli
+
+
+def test_project_declares_tomli_for_python310() -> None:
+    project = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+
+    assert "tomli>=2.0; python_version < '3.11'" in project["project"]["dependencies"]

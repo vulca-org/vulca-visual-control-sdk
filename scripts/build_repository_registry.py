@@ -7,7 +7,6 @@ import json
 import re
 import subprocess
 import sys
-import tomllib
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -15,6 +14,11 @@ from pathlib import Path
 from typing import Protocol
 
 import yaml
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - exercised through an isolated import probe
+    import tomli as tomllib
 
 
 PUBLIC_ROLES = {"sdk", "plugin", "adapter", "research", "website", "legacy"}
