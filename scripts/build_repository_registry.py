@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import argparse
 import re
+import sys
 import tomllib
 from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
@@ -56,6 +58,9 @@ _CREDENTIAL_VALUE_PATTERN = re.compile(
 )
 _WINDOWS_ABSOLUTE_PATH = re.compile(r"^[A-Za-z]:[\\/]")
 _PUBLIC_ID = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_PUBLIC_SOURCE = REPOSITORY_ROOT / "docs/product/repository-registry.yaml"
+DEFAULT_PUBLIC_OUTPUT = REPOSITORY_ROOT / "docs/product/repository-registry.md"
 
 
 class RegistryError(ValueError):
@@ -230,3 +235,135 @@ def derive_sdk_facts(root: Path) -> dict[str, object]:
         raise RegistryError("missing fact: MCP tool registrations")
 
     return {"sdk_version": version, "mcp_tool_count": tool_count}
+
+
+def _markdown_list(values: object) -> str:
+    if not isinstance(values, list) or not values:
+        return "none"
+    return ", ".join(str(value) for value in values)
+
+
+def render_public_registry(
+    data: dict[str, object],
+    derived_facts: dict[str, object],
+) -> str:
+    """Render a deterministic public reading view in YAML record order."""
+    validate_public_registry(data)
+    repositories = data["repositories"]
+    assert isinstance(repositories, list)
+
+    lines = [
+        "# Vulca Public Repository Registry",
+        "",
+        (
+            "> Generated from `docs/product/repository-registry.yaml`; "
+            f"authority facts verified on `{data['verified_on']}`."
+        ),
+        "",
+        "## Policy",
+        "",
+        str(data["policy"]),
+        "",
+    ]
+
+    sections = (
+        ("canonical", "Canonical repositories"),
+        ("active-supporting", "Active supporting repositories"),
+        ("historical", "Historical repositories"),
+        ("migrated", "Migrated repositories"),
+        ("archived", "Archived repositories"),
+    )
+    for lifecycle, heading in sections:
+        lines.extend((f"## {heading}", ""))
+        records = [record for record in repositories if record["lifecycle"] == lifecycle]
+        if not records:
+            lines.extend(("_No repositories in this category._", ""))
+            continue
+        for record in records:
+            full_name = f"{record['owner']}/{record['name']}"
+            record_lines = [
+                f"### [{full_name}]({record['public_url']})",
+                "",
+                f"- Role: `{record['role']}`",
+                f"- Lifecycle: `{record['lifecycle']}`",
+                f"- Canonical for: {_markdown_list(record['canonical_for'])}",
+                f"- Synchronization: {record['sync_direction']}",
+                f"- Version authority: {record['version_source']}",
+                f"- Release channels: {_markdown_list(record['release_channels'])}",
+            ]
+            if record["role"] == "sdk" and record["lifecycle"] == "canonical":
+                record_lines.extend(
+                    (
+                        f"- SDK version: `{derived_facts['sdk_version']}`",
+                        f"- MCP tool count: `{derived_facts['mcp_tool_count']}`",
+                    )
+                )
+            record_lines.extend((f"- Boundary note: {record['notes']}", ""))
+            lines.extend(record_lines)
+
+    lines.extend(
+        (
+            "## Maintenance",
+            "",
+            "1. Edit `docs/product/repository-registry.yaml` only for stable authority or lifecycle changes.",
+            "2. Run `python scripts/build_repository_registry.py` to regenerate this document.",
+            "3. Run `python scripts/build_repository_registry.py --check` before committing.",
+            "",
+            "Dynamic branches, commits, worktrees, and local availability are intentionally excluded from this public view.",
+        )
+    )
+    rendered = "\n".join(lines).rstrip() + "\n"
+    _validate_public_safety({"rendered": rendered}, set())
+    return rendered
+
+
+def build_public_registry(source: Path, root: Path) -> str:
+    """Validate public source and build its generated Markdown."""
+    data = load_yaml(source)
+    validate_public_registry(data)
+    return render_public_registry(data, derive_sdk_facts(root))
+
+
+def write_if_changed(path: Path, content: str) -> bool:
+    """Write ``content`` only when it differs, returning whether a write occurred."""
+    if path.is_file() and path.read_text(encoding="utf-8") == content:
+        return False
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+    return True
+
+
+def _public_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--source", type=Path, default=DEFAULT_PUBLIC_SOURCE)
+    parser.add_argument("--output", type=Path, default=DEFAULT_PUBLIC_OUTPUT)
+    parser.add_argument("--check", action="store_true")
+    return parser
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Run deterministic public generation or drift checking."""
+    args = _public_parser().parse_args(argv)
+    try:
+        rendered = build_public_registry(args.source, REPOSITORY_ROOT)
+    except RegistryError as exc:
+        print(f"repository registry error: {exc}", file=sys.stderr)
+        return 2
+
+    if args.check:
+        current = args.output.read_text(encoding="utf-8") if args.output.is_file() else None
+        if current != rendered:
+            print(
+                "repository registry is stale; regenerate with: "
+                "python scripts/build_repository_registry.py",
+                file=sys.stderr,
+            )
+            return 1
+        return 0
+
+    write_if_changed(args.output, rendered)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

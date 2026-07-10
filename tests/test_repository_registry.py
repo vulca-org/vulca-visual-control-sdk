@@ -4,10 +4,18 @@ import pytest
 
 from scripts.build_repository_registry import (
     RegistryError,
+    build_public_registry,
     derive_sdk_facts,
     load_yaml,
+    main,
+    render_public_registry,
     validate_public_registry,
 )
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+PUBLIC_SOURCE = REPO_ROOT / "docs/product/repository-registry.yaml"
+PUBLIC_OUTPUT = REPO_ROOT / "docs/product/repository-registry.md"
 
 
 def valid_public_registry() -> dict[str, object]:
@@ -208,3 +216,84 @@ def test_public_validation_rejects_private_denylist_match() -> None:
 
     with pytest.raises(RegistryError, match="private denylist"):
         validate_public_registry(data, private_denylist={"vulca-org"})
+
+
+def test_committed_public_registry_is_valid_and_complete() -> None:
+    data = load_yaml(PUBLIC_SOURCE)
+
+    validate_public_registry(data)
+
+    repositories = data["repositories"]
+    assert isinstance(repositories, list)
+    assert len(repositories) == 9
+    assert {record["visibility"] for record in repositories} == {"public"}
+
+
+def test_public_rendering_is_deterministic() -> None:
+    data = valid_public_registry()
+    facts = {"sdk_version": "0.23.1", "mcp_tool_count": 23}
+
+    assert render_public_registry(data, facts) == render_public_registry(data, facts)
+
+
+def test_public_rendering_includes_sections_and_derived_facts() -> None:
+    rendered = render_public_registry(
+        valid_public_registry(),
+        {"sdk_version": "0.23.1", "mcp_tool_count": 23},
+    )
+
+    assert "# Vulca Public Repository Registry" in rendered
+    assert "## Canonical repositories" in rendered
+    assert "SDK version: `0.23.1`" in rendered
+    assert "MCP tool count: `23`" in rendered
+    assert rendered.endswith("\n")
+    assert not rendered.endswith("\n\n")
+
+
+def test_public_rendering_places_derived_facts_under_sdk_record() -> None:
+    rendered = render_public_registry(
+        valid_public_registry(),
+        {"sdk_version": "0.23.1", "mcp_tool_count": 23},
+    )
+
+    sdk_heading = rendered.index("### [vulca-org/vulca]")
+    version_fact = rendered.index("SDK version: `0.23.1`")
+    assert sdk_heading < version_fact
+
+
+def test_committed_markdown_matches_fresh_render() -> None:
+    assert build_public_registry(PUBLIC_SOURCE, REPO_ROOT) == PUBLIC_OUTPUT.read_text(encoding="utf-8")
+
+
+def test_public_cli_check_passes_for_committed_output() -> None:
+    assert main(["--check"]) == 0
+
+
+def test_public_cli_check_rejects_stale_output_without_writing(tmp_path: Path) -> None:
+    stale_output = tmp_path / "registry.md"
+    stale_output.write_text("stale\n", encoding="utf-8")
+
+    result = main(
+        [
+            "--check",
+            "--source",
+            str(PUBLIC_SOURCE),
+            "--output",
+            str(stale_output),
+        ]
+    )
+
+    assert result == 1
+    assert stale_output.read_text(encoding="utf-8") == "stale\n"
+
+
+def test_public_cli_does_not_expand_home_paths(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    output = tmp_path / "registry.md"
+
+    def reject_expanduser(path: Path) -> Path:
+        raise AssertionError(f"public mode expanded a home path: {path.name}")
+
+    monkeypatch.setattr(Path, "expanduser", reject_expanduser)
+
+    assert main(["--source", str(PUBLIC_SOURCE), "--output", str(output)]) == 0
+    assert output.is_file()

@@ -1,0 +1,154 @@
+schema_version: 1
+verified_on: "2026-07-10"
+policy: >-
+  Only public repositories appear as records. This registry describes stable
+  authority, lifecycle, synchronization, and release boundaries; dynamic
+  branch, commit, worktree, and local availability state remains outside the
+  public artifact.
+repositories:
+  - id: vulca-sdk
+    name: vulca
+    owner: vulca-org
+    visibility: public
+    role: sdk
+    lifecycle: canonical
+    canonical_for:
+      - Vulca Python SDK
+      - Vulca CLI
+      - Vulca MCP server
+      - Public SDK documentation
+    sync_direction: >-
+      A non-public development source may export selected public-safe changes
+      into this repository; this repository is the public distribution source.
+    version_source: pyproject.toml
+    release_channels:
+      - PyPI
+      - GitHub tags
+      - GitHub Releases
+    public_url: https://github.com/vulca-org/vulca
+    notes: Canonical public product and developer surface.
+
+  - id: vulca-plugin
+    name: vulca-plugin
+    owner: vulca-org
+    visibility: public
+    role: plugin
+    lifecycle: canonical
+    canonical_for:
+      - Vulca agent plugin distribution
+    sync_direction: >-
+      Selected public SDK skills synchronize from vulca-org/vulca into this
+      plugin distribution repository.
+    version_source: Plugin manifest
+    release_channels:
+      - GitHub repository
+    public_url: https://github.com/vulca-org/vulca-plugin
+    notes: Canonical plugin packaging surface; it does not replace the SDK source.
+
+  - id: comfyui-vulca
+    name: comfyui-vulca
+    owner: vulca-org
+    visibility: public
+    role: adapter
+    lifecycle: canonical
+    canonical_for:
+      - Vulca ComfyUI adapter
+    sync_direction: >-
+      Adapter releases consume public Vulca SDK contracts; adapter-specific
+      nodes remain authoritative in this repository.
+    version_source: Package manifest and Git tags
+    release_channels:
+      - GitHub tags
+      - GitHub Releases
+    public_url: https://github.com/vulca-org/comfyui-vulca
+    notes: Canonical ComfyUI integration surface.
+
+  - id: vulca-bench
+    name: VULCA-Bench
+    owner: yha9806
+    visibility: public
+    role: research
+    lifecycle: active-supporting
+    canonical_for:
+      - Public VULCA-Bench research artifacts
+    sync_direction: none
+    version_source: Dataset and repository revisions
+    release_channels:
+      - GitHub repository
+    public_url: https://github.com/yha9806/VULCA-Bench
+    notes: Supporting benchmark research; it is not the SDK release authority.
+
+  - id: vulca-framework
+    name: VULCA-Framework
+    owner: yha9806
+    visibility: public
+    role: research
+    lifecycle: active-supporting
+    canonical_for:
+      - Public VULCA framework research artifacts
+    sync_direction: none
+    version_source: Repository revisions
+    release_channels:
+      - GitHub repository
+    public_url: https://github.com/yha9806/VULCA-Framework
+    notes: Supporting research framework; it is not the SDK release authority.
+
+  - id: emnlp2025-vulca
+    name: EMNLP2025-VULCA
+    owner: yha9806
+    visibility: public
+    role: research
+    lifecycle: historical
+    canonical_for:
+      - Historical EMNLP 2025 research artifacts
+    sync_direction: none
+    version_source: Repository revision
+    release_channels:
+      - GitHub repository
+    public_url: https://github.com/yha9806/EMNLP2025-VULCA
+    notes: Historical paper surface retained for research traceability.
+
+  - id: vulca-emnlp2025-site
+    name: VULCA-EMNLP2025
+    owner: yha9806
+    visibility: public
+    role: website
+    lifecycle: historical
+    canonical_for:
+      - Historical EMNLP 2025 project website
+    sync_direction: none
+    version_source: Repository revision
+    release_channels:
+      - GitHub Pages
+    public_url: https://github.com/yha9806/VULCA-EMNLP2025
+    notes: Historical website surface; current product documentation lives with the SDK.
+
+  - id: vulca-exhibition
+    name: vulca-exhibition
+    owner: yha9806
+    visibility: public
+    role: legacy
+    lifecycle: migrated
+    canonical_for:
+      - Historical exhibition implementation
+    sync_direction: >-
+      Superseded by vulca-org/vulca and current public product documentation;
+      no reverse synchronization is expected.
+    version_source: Repository revision
+    release_channels: []
+    public_url: https://github.com/yha9806/vulca-exhibition
+    notes: Migrated to the canonical public SDK and current product surfaces.
+
+  - id: claude-skills-vulca
+    name: claude-skills-vulca
+    owner: yha9806
+    visibility: public
+    role: legacy
+    lifecycle: archived
+    canonical_for:
+      - Historical Vulca skill distribution
+    sync_direction: none
+    version_source: Repository revision
+    release_channels: []
+    public_url: https://github.com/yha9806/claude-skills-vulca
+    notes: Archived historical surface; current skills ship through canonical repositories.
