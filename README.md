@@ -529,6 +529,7 @@ From an agent: `/evaluate` calls the `evaluate_artwork` MCP tool and returns evo
 ## Support
 
 - **Issues:** [github.com/vulca-org/vulca/issues](https://github.com/vulca-org/vulca/issues) — bug reports, feature requests, workflow needs that should become a skill
+- [Repository registry](docs/product/repository-registry.md) — public repository authority, lifecycle, synchronization, and release boundaries
 - **Plugin:** [vulca-org/vulca-plugin](https://github.com/vulca-org/vulca-plugin) — version-tracked with the SDK; install in Claude Code, Gemini CLI, or Codex Desktop/CLI
 - **Web platform:** [vulcaart.art](https://vulcaart.art) and [vulca-platform](https://github.com/yha9806/vulca-platform) — the deployed demo/site and platform workspace
 - **Skill source:** [`.claude/skills/decompose/SKILL.md`](.claude/skills/decompose/SKILL.md) in this repo — the only source of truth for the `/decompose` flow

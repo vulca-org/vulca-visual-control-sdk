@@ -865,3 +865,26 @@ def test_private_cli_validates_before_replacing_outputs(tmp_path: Path) -> None:
     assert result == 2
     assert json_output.read_text(encoding="utf-8") == "old json\n"
     assert markdown_output.read_text(encoding="utf-8") == "old markdown\n"
+
+
+def test_readme_links_public_repository_registry() -> None:
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+
+    assert "[Repository registry](docs/product/repository-registry.md)" in readme
+
+
+def test_ci_checks_only_public_repository_registry() -> None:
+    workflow = (REPO_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+    assert "python scripts/build_repository_registry.py --check" in workflow
+    for forbidden in ("--snapshot-private", "--private-seeds", "--refresh-github", ".vulca"):
+        assert forbidden not in workflow
+
+
+def test_public_render_excludes_synthetic_private_denylist() -> None:
+    seeds = valid_private_seeds()
+    denylist = private_seed_denylist(seeds)
+
+    rendered = build_public_registry(PUBLIC_SOURCE, REPO_ROOT, private_denylist=denylist)
+
+    assert all(value not in rendered for value in denylist)
