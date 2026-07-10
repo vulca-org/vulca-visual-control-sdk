@@ -1,22 +1,29 @@
+import json
 import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
+import yaml
 
 from scripts.build_repository_registry import (
     CommandResult,
     RegistryError,
     SubprocessRunner,
+    build_private_snapshot,
     build_public_registry,
     classify_status,
     derive_sdk_facts,
     git_command,
+    github_metadata,
     load_yaml,
     load_private_seeds,
     main,
     parse_worktree_porcelain,
     private_seed_denylist,
     recommend_action,
+    render_private_json,
+    render_private_markdown,
     render_public_registry,
     scan_checkout,
     validate_private_seeds,
@@ -658,3 +665,203 @@ def test_scan_checkout_bounds_git_timeout(tmp_path: Path) -> None:
 )
 def test_recommend_action_is_advisory(record: dict[str, object], expected: str) -> None:
     assert recommend_action(record) == expected
+
+
+def _write_private_seed_file(path: Path, data: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+
+
+def test_private_snapshot_discovers_and_deduplicates_worktrees(tmp_path: Path) -> None:
+    root = tmp_path / "main repository"
+    linked = tmp_path / "linked worktree"
+    subprocess.run(["git", "init", "-b", "main", str(root)], check=True, capture_output=True)
+    _run_git(root, "config", "user.name", "Registry Test")
+    _run_git(root, "config", "user.email", "registry-test@example.invalid")
+    (root / "tracked.txt").write_text("tracked\n", encoding="utf-8")
+    _run_git(root, "add", "tracked.txt")
+    _run_git(root, "commit", "-m", "initial")
+    _run_git(root, "remote", "add", "origin", "https://github.com/example/private-platform.git")
+    _run_git(root, "worktree", "add", "-b", "feature", str(linked))
+    seeds = valid_private_seeds(str(root))
+    repositories = seeds["repositories"]
+    assert isinstance(repositories, list)
+    repositories[0]["local_roots"] = [str(root), str(linked)]
+    observed_at = datetime(2026, 7, 10, 12, 30, tzinfo=timezone.utc)
+
+    snapshot = build_private_snapshot(seeds, SubprocessRunner(), observed_at=observed_at)
+
+    records = snapshot["records"]
+    assert isinstance(records, list)
+    assert snapshot["observed_at"] == "2026-07-10T12:30:00Z"
+    assert [record["local_path"] for record in records] == sorted([str(root), str(linked)])
+    assert {record["seed_id"] for record in records} == {"example-private-platform"}
+    assert all(record["availability"] == "available" for record in records)
+
+
+def test_private_snapshot_renderers_share_timestamp_and_records(tmp_path: Path) -> None:
+    missing = tmp_path / "missing repository"
+    snapshot = build_private_snapshot(
+        valid_private_seeds(str(missing)),
+        SubprocessRunner(),
+        observed_at=datetime(2026, 7, 10, 12, 30, tzinfo=timezone.utc),
+    )
+
+    json_text = render_private_json(snapshot)
+    markdown = render_private_markdown(snapshot)
+    parsed = json.loads(json_text)
+
+    assert parsed["observed_at"] == "2026-07-10T12:30:00Z"
+    assert "2026-07-10T12:30:00Z" in markdown
+    assert parsed["records"][0]["seed_id"] in markdown
+    assert parsed["records"][0]["local_path"] in markdown
+    assert parsed["records"][0]["availability"] == "missing"
+
+
+def test_github_metadata_uses_fixed_list_command_and_timeout() -> None:
+    runner = RecordingRunner(
+        CommandResult(
+            returncode=0,
+            stdout=(
+                '{"visibility":"PRIVATE","isArchived":false,'
+                '"defaultBranchRef":{"name":"main"}}\n'
+            ),
+        )
+    )
+
+    metadata = github_metadata("example/private-platform", runner)
+
+    assert runner.calls == [
+        (
+            [
+                "gh",
+                "repo",
+                "view",
+                "example/private-platform",
+                "--json",
+                "visibility,isArchived,defaultBranchRef",
+            ],
+            30,
+        )
+    ]
+    assert metadata == {
+        "availability": "available",
+        "visibility": "private",
+        "is_archived": False,
+        "default_branch": "main",
+    }
+
+
+def test_private_snapshot_never_calls_github_without_refresh(tmp_path: Path) -> None:
+    runner = RecordingRunner()
+
+    snapshot = build_private_snapshot(
+        valid_private_seeds(str(tmp_path / "missing")),
+        runner,
+        observed_at=datetime(2026, 7, 10, tzinfo=timezone.utc),
+        refresh_github=False,
+    )
+
+    assert runner.calls == []
+    records = snapshot["records"]
+    assert isinstance(records, list) and len(records) == 1
+    assert "github" not in records[0]
+
+
+def test_failed_github_refresh_keeps_local_snapshot(tmp_path: Path) -> None:
+    runner = RecordingRunner(CommandResult(returncode=1, stderr_category="command-failed"))
+
+    snapshot = build_private_snapshot(
+        valid_private_seeds(str(tmp_path / "missing")),
+        runner,
+        observed_at=datetime(2026, 7, 10, tzinfo=timezone.utc),
+        refresh_github=True,
+    )
+
+    records = snapshot["records"]
+    assert isinstance(records, list) and len(records) == 1
+    assert records[0]["availability"] == "missing"
+    assert records[0]["github"] == {
+        "availability": "unavailable",
+        "error_category": "command-failed",
+    }
+
+
+def test_public_cli_never_invokes_subprocess_runner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def reject_run(*args: object, **kwargs: object) -> CommandResult:
+        raise AssertionError("public mode invoked an external command")
+
+    monkeypatch.setattr(SubprocessRunner, "run", reject_run)
+
+    assert main(["--check"]) == 0
+
+
+def test_private_cli_writes_snapshot_outside_repository(tmp_path: Path) -> None:
+    seeds = tmp_path / "private" / "seeds.yaml"
+    json_output = tmp_path / "snapshot" / "registry.json"
+    markdown_output = tmp_path / "snapshot" / "registry.md"
+    _write_private_seed_file(seeds, valid_private_seeds(str(tmp_path / "missing")))
+
+    result = main(
+        [
+            "--snapshot-private",
+            "--private-seeds",
+            str(seeds),
+            "--private-json",
+            str(json_output),
+            "--private-markdown",
+            str(markdown_output),
+        ]
+    )
+
+    assert result == 0
+    assert json.loads(json_output.read_text(encoding="utf-8"))["records"][0]["availability"] == "missing"
+    assert "missing" in markdown_output.read_text(encoding="utf-8")
+
+
+def test_private_cli_rejects_paths_inside_repository(tmp_path: Path) -> None:
+    outside_seed = tmp_path / "seeds.yaml"
+    _write_private_seed_file(outside_seed, valid_private_seeds(str(tmp_path / "missing")))
+    inside_output = REPO_ROOT / "private-snapshot.json"
+
+    result = main(
+        [
+            "--snapshot-private",
+            "--private-seeds",
+            str(outside_seed),
+            "--private-json",
+            str(inside_output),
+            "--private-markdown",
+            str(tmp_path / "snapshot.md"),
+        ]
+    )
+
+    assert result == 2
+    assert not inside_output.exists()
+
+
+def test_private_cli_validates_before_replacing_outputs(tmp_path: Path) -> None:
+    invalid_seeds = tmp_path / "invalid.yaml"
+    invalid_seeds.write_text("schema_version: 1\nrepositories: []\n", encoding="utf-8")
+    json_output = tmp_path / "snapshot.json"
+    markdown_output = tmp_path / "snapshot.md"
+    json_output.write_text("old json\n", encoding="utf-8")
+    markdown_output.write_text("old markdown\n", encoding="utf-8")
+
+    result = main(
+        [
+            "--snapshot-private",
+            "--private-seeds",
+            str(invalid_seeds),
+            "--private-json",
+            str(json_output),
+            "--private-markdown",
+            str(markdown_output),
+        ]
+    )
+
+    assert result == 2
+    assert json_output.read_text(encoding="utf-8") == "old json\n"
+    assert markdown_output.read_text(encoding="utf-8") == "old markdown\n"

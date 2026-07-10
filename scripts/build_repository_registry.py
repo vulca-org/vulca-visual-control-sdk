@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import subprocess
 import sys
 import tomllib
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Protocol
 
@@ -410,10 +412,10 @@ def _normalized_remote(remote: str | None) -> str | None:
 
 def recommend_action(record: dict[str, object]) -> str:
     """Return a non-mutating human-review label for an observed checkout."""
-    if record.get("availability") != "available":
-        return "review-unavailable-checkout"
     if record.get("prunable") is True:
         return "review-prunable-record"
+    if record.get("availability") != "available":
+        return "review-unavailable-checkout"
     if record.get("remote_mismatch") is True:
         return "inspect-remote-mismatch"
     if record.get("worktree_state") in {"modified", "untracked", "mixed"}:
@@ -443,6 +445,229 @@ def _unavailable_checkout(path: Path, availability: str, error_category: str | N
         record["error_category"] = error_category
     record["recommended_action"] = recommend_action(record)
     return record
+
+
+def github_metadata(full_name: str, runner: CommandRunner) -> dict[str, object]:
+    """Read bounded GitHub repository metadata through an explicit opt-in call."""
+    if not re.fullmatch(r"[^/\s]+/[^/\s]+", full_name):
+        raise RegistryError("GitHub identity must be owner/repository")
+    result = runner.run(
+        [
+            "gh",
+            "repo",
+            "view",
+            full_name,
+            "--json",
+            "visibility,isArchived,defaultBranchRef",
+        ],
+        timeout=30,
+    )
+    if result.returncode != 0:
+        return {
+            "availability": "unavailable",
+            "error_category": result.stderr_category or "command-failed",
+        }
+    try:
+        payload = json.loads(result.stdout)
+    except (json.JSONDecodeError, TypeError):
+        return {"availability": "unavailable", "error_category": "invalid-response"}
+    if not isinstance(payload, dict):
+        return {"availability": "unavailable", "error_category": "invalid-response"}
+
+    default_branch_ref = payload.get("defaultBranchRef")
+    default_branch = default_branch_ref.get("name") if isinstance(default_branch_ref, dict) else None
+    visibility = payload.get("visibility")
+    is_archived = payload.get("isArchived")
+    if not isinstance(visibility, str) or not isinstance(is_archived, bool):
+        return {"availability": "unavailable", "error_category": "invalid-response"}
+    return {
+        "availability": "available",
+        "visibility": visibility.casefold(),
+        "is_archived": is_archived,
+        "default_branch": default_branch,
+    }
+
+
+def _snapshot_timestamp(observed_at: datetime | None) -> str:
+    value = observed_at or datetime.now(timezone.utc)
+    if value.tzinfo is None:
+        raise RegistryError("snapshot observed_at must include a timezone")
+    return value.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _attach_seed_context(
+    observed: dict[str, object],
+    seed: Mapping[str, object],
+    github: dict[str, object] | None,
+) -> dict[str, object]:
+    record = {
+        "seed_id": seed["id"],
+        "full_name": seed["full_name"],
+        "visibility": seed["visibility"],
+        "lifecycle": seed["lifecycle"],
+        "expected_remote": seed["expected_remote"],
+        "sensitivity": seed["sensitivity"],
+        "release_boundary": seed["release_boundary"],
+        "sync_relationship": seed["sync_relationship"],
+        **observed,
+    }
+    if github is not None:
+        record["github"] = github
+    return record
+
+
+def _validate_private_snapshot(snapshot: dict[str, object]) -> None:
+    _validate_private_value_safety(snapshot)
+    if set(snapshot) != {"schema_version", "observed_at", "github_refreshed", "records"}:
+        raise RegistryError("private snapshot has invalid top-level fields")
+    if snapshot.get("schema_version") != 1:
+        raise RegistryError("private snapshot schema_version must be 1")
+    observed_at = snapshot.get("observed_at")
+    if not isinstance(observed_at, str) or not observed_at.endswith("Z"):
+        raise RegistryError("private snapshot observed_at must be UTC")
+    if not isinstance(snapshot.get("github_refreshed"), bool):
+        raise RegistryError("private snapshot github_refreshed must be boolean")
+    records = snapshot.get("records")
+    if not isinstance(records, list) or not records:
+        raise RegistryError("private snapshot records must be non-empty")
+    for index, record in enumerate(records):
+        if not isinstance(record, dict):
+            raise RegistryError(f"private snapshot record {index} must be a mapping")
+        for field in ("seed_id", "local_path", "availability", "recommended_action"):
+            if not isinstance(record.get(field), str) or not record[field]:
+                raise RegistryError(f"private snapshot record {index} is missing {field}")
+
+
+def build_private_snapshot(
+    seeds: dict[str, object],
+    runner: CommandRunner,
+    observed_at: datetime | None = None,
+    refresh_github: bool = False,
+) -> dict[str, object]:
+    """Expand stable seeds into one timestamped, read-only operational snapshot."""
+    validate_private_seeds(seeds)
+    timestamp = _snapshot_timestamp(observed_at)
+    repositories = seeds["repositories"]
+    assert isinstance(repositories, list)
+    collected: list[tuple[int, dict[str, object]]] = []
+    seen_paths: set[str] = set()
+
+    for seed_index, seed in enumerate(repositories):
+        full_name = seed["full_name"]
+        github = None
+        if refresh_github and isinstance(full_name, str):
+            github = github_metadata(full_name, runner)
+
+        for root_value in seed["local_roots"]:
+            root = Path(root_value)
+            root_key = str(root.resolve(strict=False))
+            if root_key in seen_paths:
+                continue
+
+            root_observed = scan_checkout(root, seed["expected_remote"], runner)
+            worktree_metadata: dict[str, dict[str, object]] = {}
+            if root_observed["availability"] == "available":
+                worktree_result = git_command(runner, root, "worktree", "list", "--porcelain")
+                if worktree_result.returncode == 0:
+                    for parsed in parse_worktree_porcelain(worktree_result.stdout):
+                        parsed_key = str(Path(str(parsed["local_path"])).resolve(strict=False))
+                        worktree_metadata[parsed_key] = parsed
+                else:
+                    root_observed.setdefault(
+                        "error_category",
+                        worktree_result.stderr_category or "worktree-discovery-failed",
+                    )
+
+            candidates: list[tuple[Path, dict[str, object] | None]] = [(root, root_observed)]
+            candidates.extend(
+                (Path(str(parsed["local_path"])), None)
+                for key, parsed in worktree_metadata.items()
+                if key != root_key
+            )
+            for candidate, pre_scanned in candidates:
+                path_key = str(candidate.resolve(strict=False))
+                if path_key in seen_paths:
+                    continue
+                seen_paths.add(path_key)
+                observed = dict(pre_scanned) if pre_scanned is not None else scan_checkout(
+                    candidate,
+                    seed["expected_remote"],
+                    runner,
+                )
+                parsed = worktree_metadata.get(path_key)
+                if parsed is not None:
+                    observed["prunable"] = parsed["prunable"]
+                    observed["locked"] = parsed["locked"]
+                    if observed["head"] is None:
+                        observed["head"] = parsed["head"]
+                    if observed["current_branch"] is None:
+                        observed["current_branch"] = parsed["current_branch"]
+                    observed["recommended_action"] = recommend_action(observed)
+                collected.append((seed_index, _attach_seed_context(observed, seed, github)))
+
+    records = [record for _, record in sorted(collected, key=lambda item: (item[0], item[1]["local_path"]))]
+    snapshot = {
+        "schema_version": 1,
+        "observed_at": timestamp,
+        "github_refreshed": refresh_github,
+        "records": records,
+    }
+    _validate_private_snapshot(snapshot)
+    return snapshot
+
+
+def render_private_json(snapshot: dict[str, object]) -> str:
+    """Render the private authority artifact as stable JSON."""
+    _validate_private_snapshot(snapshot)
+    return json.dumps(snapshot, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+
+
+def _markdown_cell(value: object) -> str:
+    if value is None:
+        return "unknown"
+    return str(value).replace("|", "\\|").replace("\n", " ")
+
+
+def render_private_markdown(snapshot: dict[str, object]) -> str:
+    """Render a private human reading view from the same snapshot model."""
+    _validate_private_snapshot(snapshot)
+    lines = [
+        "# Vulca Private Repository Snapshot",
+        "",
+        f"- Observed at: `{snapshot['observed_at']}`",
+        f"- GitHub refreshed: `{'yes' if snapshot['github_refreshed'] else 'no'}`",
+        "",
+        "| Seed | Local path | Availability | Branch | HEAD | Ahead | Behind | State | Action |",
+        "| --- | --- | --- | --- | --- | ---: | ---: | --- | --- |",
+    ]
+    records = snapshot["records"]
+    assert isinstance(records, list)
+    for record in records:
+        lines.append(
+            "| "
+            + " | ".join(
+                _markdown_cell(record.get(field))
+                for field in (
+                    "seed_id",
+                    "local_path",
+                    "availability",
+                    "current_branch",
+                    "head",
+                    "ahead",
+                    "behind",
+                    "worktree_state",
+                    "recommended_action",
+                )
+            )
+            + " |"
+        )
+    lines.extend(
+        (
+            "",
+            "This snapshot is observational. Recommended actions require human review and are never executed here.",
+        )
+    )
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def scan_checkout(
@@ -696,10 +921,14 @@ def render_public_registry(
     return rendered
 
 
-def build_public_registry(source: Path, root: Path) -> str:
+def build_public_registry(
+    source: Path,
+    root: Path,
+    private_denylist: set[str] | None = None,
+) -> str:
     """Validate public source and build its generated Markdown."""
     data = load_yaml(source)
-    validate_public_registry(data)
+    validate_public_registry(data, private_denylist=private_denylist)
     return render_public_registry(data, derive_sdk_facts(root))
 
 
@@ -712,22 +941,70 @@ def write_if_changed(path: Path, content: str) -> bool:
     return True
 
 
-def _public_parser() -> argparse.ArgumentParser:
+def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, default=DEFAULT_PUBLIC_SOURCE)
     parser.add_argument("--output", type=Path, default=DEFAULT_PUBLIC_OUTPUT)
     parser.add_argument("--check", action="store_true")
+    parser.add_argument("--snapshot-private", action="store_true")
+    parser.add_argument("--private-seeds", type=Path)
+    parser.add_argument("--private-json", type=Path)
+    parser.add_argument("--private-markdown", type=Path)
+    parser.add_argument("--refresh-github", action="store_true")
     return parser
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    """Run deterministic public generation or drift checking."""
-    args = _public_parser().parse_args(argv)
+def _private_path_outside_repository(path: Path) -> Path:
+    resolved = path.expanduser().resolve()
     try:
-        rendered = build_public_registry(args.source, REPOSITORY_ROOT)
-    except RegistryError as exc:
-        print(f"repository registry error: {exc}", file=sys.stderr)
-        return 2
+        resolved.relative_to(REPOSITORY_ROOT.resolve())
+    except ValueError:
+        return resolved
+    raise RegistryError("private seed and snapshot paths must be outside the repository root")
+
+
+def _run_private_snapshot(args: argparse.Namespace) -> int:
+    if args.check:
+        raise RegistryError("--check cannot be combined with --snapshot-private")
+    required = {
+        "--private-seeds": args.private_seeds,
+        "--private-json": args.private_json,
+        "--private-markdown": args.private_markdown,
+    }
+    missing = [flag for flag, value in required.items() if value is None]
+    if missing:
+        raise RegistryError("snapshot mode requires all private seed and output paths")
+
+    seed_path = _private_path_outside_repository(args.private_seeds)
+    json_path = _private_path_outside_repository(args.private_json)
+    markdown_path = _private_path_outside_repository(args.private_markdown)
+    seeds = load_private_seeds(seed_path)
+    snapshot = build_private_snapshot(
+        seeds,
+        SubprocessRunner(),
+        refresh_github=args.refresh_github,
+    )
+    json_content = render_private_json(snapshot)
+    markdown_content = render_private_markdown(snapshot)
+
+    json_path.parent.mkdir(parents=True, exist_ok=True)
+    markdown_path.parent.mkdir(parents=True, exist_ok=True)
+    write_if_changed(json_path, json_content)
+    write_if_changed(markdown_path, markdown_content)
+    return 0
+
+
+def _run_public(args: argparse.Namespace) -> int:
+    if args.private_json is not None or args.private_markdown is not None or args.refresh_github:
+        raise RegistryError("private output and refresh flags require --snapshot-private")
+    denylist = None
+    if args.private_seeds is not None:
+        if not args.check:
+            raise RegistryError("--private-seeds without snapshot mode requires --check")
+        seed_path = _private_path_outside_repository(args.private_seeds)
+        denylist = private_seed_denylist(load_private_seeds(seed_path))
+
+    rendered = build_public_registry(args.source, REPOSITORY_ROOT, private_denylist=denylist)
 
     if args.check:
         current = args.output.read_text(encoding="utf-8") if args.output.is_file() else None
@@ -742,6 +1019,18 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     write_if_changed(args.output, rendered)
     return 0
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Run public generation/checking or an explicit private snapshot."""
+    args = _parser().parse_args(argv)
+    try:
+        if args.snapshot_private:
+            return _run_private_snapshot(args)
+        return _run_public(args)
+    except RegistryError as exc:
+        print(f"repository registry error: {exc}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":
