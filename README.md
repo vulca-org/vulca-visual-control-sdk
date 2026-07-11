@@ -6,8 +6,8 @@
 
 [![PyPI](https://img.shields.io/pypi/v/vulca.svg)](https://pypi.org/project/vulca/)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://pypi.org/project/vulca/)
-[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-green.svg)](https://github.com/vulca-org/vulca/blob/master/LICENSE)
-[![CI](https://github.com/vulca-org/vulca/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/vulca-org/vulca/actions/workflows/ci.yml)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-green.svg)](https://github.com/vulca-org/vulca-visual-control-sdk/blob/master/LICENSE)
+[![CI](https://github.com/vulca-org/vulca-visual-control-sdk/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/vulca-org/vulca-visual-control-sdk/actions/workflows/ci.yml)
 [![MCP Tools](https://img.shields.io/badge/MCP_tools-current-blueviolet.svg)](https://github.com/vulca-org/vulca-plugin)
 
 **Vulca turns fuzzy visual intent into controlled creative production.**
@@ -115,7 +115,7 @@ pip install vulca[mcp]==0.23.1
 # Install the /decompose skill:
 mkdir -p ~/.claude/skills/decompose
 curl -o ~/.claude/skills/decompose/SKILL.md \
-  "https://raw.githubusercontent.com/vulca-org/vulca/v0.23.1/.claude/skills/decompose/SKILL.md?utm_source=github-readme&utm_medium=oss&utm_campaign=refresh-2026-05-11"
+  "https://raw.githubusercontent.com/vulca-org/vulca-visual-control-sdk/v0.23.1/.claude/skills/decompose/SKILL.md?utm_source=github-readme&utm_medium=oss&utm_campaign=refresh-2026-05-11"
 ```
 
 <p align="center">
@@ -528,7 +528,7 @@ From an agent: `/evaluate` calls the `evaluate_artwork` MCP tool and returns evo
 
 ## Support
 
-- **Issues:** [github.com/vulca-org/vulca/issues](https://github.com/vulca-org/vulca/issues) — bug reports, feature requests, workflow needs that should become a skill
+- **Issues:** [github.com/vulca-org/vulca-visual-control-sdk/issues](https://github.com/vulca-org/vulca-visual-control-sdk/issues) — bug reports, feature requests, workflow needs that should become a skill
 - **Plugin:** [vulca-org/vulca-plugin](https://github.com/vulca-org/vulca-plugin) — version-tracked with the SDK; install in Claude Code, Gemini CLI, or Codex Desktop/CLI
 - **Web platform:** [vulcaart.art](https://vulcaart.art) and [vulca-platform](https://github.com/yha9806/vulca-platform) — the deployed demo/site and platform workspace
 - **Skill source:** [`.claude/skills/decompose/SKILL.md`](.claude/skills/decompose/SKILL.md) in this repo — the only source of truth for the `/decompose` flow

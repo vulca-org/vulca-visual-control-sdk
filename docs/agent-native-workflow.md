@@ -185,6 +185,6 @@ That manifest is the contract. The agent reads it, re-authors the plan, and runs
 
 ## Links
 
-- Repo: https://github.com/vulca-org/vulca
+- Repo: https://github.com/vulca-org/vulca-visual-control-sdk
 - Social showcase: Post #1 (Bieber Coachella) and Post #2 (Trump Butler) linked from the README
 - Pipeline entry point: `scripts/claude_orchestrated_pipeline.py`
