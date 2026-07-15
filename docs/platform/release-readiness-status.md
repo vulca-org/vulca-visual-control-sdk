@@ -1,13 +1,13 @@
 # Platform Release Readiness Status
 
 **Status:** Working release gate summary
-**Last updated:** 2026-05-01
+**Last updated:** 2026-07-16
 
 ## Current Claims We Can Make
 
 - Vulca has a Claude plugin package shape at the repository root: `.claude-plugin/plugin.json`, `.mcp.json`, and `skills/`.
-- Vulca has a repo-local Codex plugin package for validation: `plugins/vulca/.codex-plugin/plugin.json`, `plugins/vulca/.mcp.json`, and `plugins/vulca/skills/`.
-- Codex can be documented as a plugin plus MCP target; official public Codex plugin publishing should remain future-facing until OpenAI opens that flow.
+- Vulca has a public Git-backed Codex marketplace source at `vulca-org/vulca-visual-agent-plugin`, backed by `plugins/vulca/.codex-plugin/plugin.json`, `plugins/vulca/.mcp.json`, and `plugins/vulca/skills/`.
+- Codex can be documented as a plugin plus MCP target. OpenAI's plugin submission portal is available, but a directory listing must not be claimed before submission and acceptance.
 - ChatGPT can be documented as a remote MCP app/prototype target with a remote-safe streamable HTTP entry point, `vulca-mcp-remote`.
 - Google/Gemini can be documented as a provider path now, with ADK / Vertex Agent Engine later.
 - Redraw is an advanced workflow today. v0.22 target-aware mask refinement is merged, but polished `/inpaint` or `/redraw-layer` promotion remains gated on real-image dogfood evidence.
@@ -22,13 +22,16 @@
 
 ## Verification Evidence
 
-Run in `master` on 2026-05-01:
+Revalidated from the public Plugin repository after the rename on 2026-07-15:
 
 ```bash
-/opt/homebrew/bin/codex marketplace add .
+/Applications/ChatGPT.app/Contents/Resources/codex plugin marketplace add vulca-org/vulca-visual-agent-plugin
+/Applications/ChatGPT.app/Contents/Resources/codex plugin add vulca --marketplace vulca-visual-agent-plugin
 ```
 
-Observed: added marketplace `vulca-plugins` from this worktree.
+Observed with an isolated `CODEX_HOME`: added marketplace `vulca-visual-agent-plugin` from public GitHub and installed `vulca@vulca-visual-agent-plugin` version `0.23.1`.
+
+The following Claude evidence remains the historical 2026-05-01 validation record:
 
 ```bash
 /Users/yhryzy/.local/bin/claude plugin validate .
@@ -103,7 +106,7 @@ Observed: 14 passed.
 ## Manual Gates Remaining
 
 - Optional: run a full interactive `claude --plugin-dir .` session if you want UI-level confirmation beyond `plugin validate` and non-interactive skill discovery.
-- Optional: open Codex UI and confirm the newly added `vulca-plugins` marketplace source appears as expected.
+- Optional: open Codex UI and confirm the `vulca-visual-agent-plugin` marketplace source and `vulca` plugin appear as expected.
 - Deploy `vulca-mcp-remote` behind HTTPS/auth/logging before connecting it to ChatGPT developer mode from a public URL.
 - For ChatGPT App resubmission, the public privacy policy route is live at
   `https://vulcaart.art/chatgpt-app-privacy`; complete
