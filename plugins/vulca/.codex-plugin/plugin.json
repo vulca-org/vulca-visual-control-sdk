@@ -6,8 +6,8 @@
     "name": "Vulca maintainers",
     "url": "https://github.com/vulca-org"
   },
-  "homepage": "https://github.com/vulca-org/vulca-plugin",
-  "repository": "https://github.com/vulca-org/vulca-plugin",
+  "homepage": "https://github.com/vulca-org/vulca-visual-agent-plugin",
+  "repository": "https://github.com/vulca-org/vulca-visual-agent-plugin",
   "license": "Apache-2.0",
   "keywords": [
     "visual-control",
@@ -28,7 +28,7 @@
       "Write",
       "MCP"
     ],
-    "websiteURL": "https://github.com/vulca-org/vulca-plugin",
+    "websiteURL": "https://github.com/vulca-org/vulca-visual-agent-plugin",
     "defaultPrompt": [
       "Run Vulca visual discovery for this visual idea and produce direction cards.",
       "Decompose this image into semantic layers and summarize what can be edited.",

@@ -22,7 +22,7 @@ ruff check src/ tests/      # narrow rule set (E9/F63/F7/F82) in v0.17.x — exp
 
 The MCP surface lives in `src/vulca/mcp_server.py`. Any new tool must:
 - have a schema test under `tests/test_mcp_parity.py` or `tests/test_mcp_new_tools.py`
-- be listed in the plugin manifest at `vulca-org/vulca-plugin`
+- be listed in the plugin manifest at `vulca-org/vulca-visual-agent-plugin`
 - survive a live ship-gate (see `docs/superpowers/plans/*.md`)
 
 ## Anti-patterns — what will NOT be merged
