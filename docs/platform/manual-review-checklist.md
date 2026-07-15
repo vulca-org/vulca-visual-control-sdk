@@ -57,27 +57,22 @@ Verify:
 
 ## Codex Manual Gate
 
-The installed local CLI in this environment is `codex-cli 0.121.0` and exposes:
+The installed ChatGPT desktop CLI in this environment is `codex-cli 0.144.2` and exposes:
 
 ```bash
-codex marketplace add .
+codex plugin marketplace add .
+codex plugin add vulca --marketplace vulca-visual-agent-plugin
 ```
 
-Official docs currently show:
+Then restart Codex and verify:
 
-```bash
-codex plugin marketplace add ./local-marketplace-root
-```
-
-Use whichever form the installed CLI supports, then restart Codex and verify:
-
-- `Vulca Plugins` appears as a marketplace source;
+- `Vulca Visual Agent Plugin` appears as a marketplace source;
 - `Vulca` appears as an installable plugin;
 - bundled skills are visible after install;
 - `vulca-mcp` can start;
 - plugin copy does not contain scaffold placeholder markers.
 
-Do not state that official Codex public publishing has opened until OpenAI's docs change from "coming soon."
+Before public submission, confirm the publisher has Apps Management write access and a verified developer or business identity, then use `https://platform.openai.com/plugins`.
 
 ## Redraw Gate
 

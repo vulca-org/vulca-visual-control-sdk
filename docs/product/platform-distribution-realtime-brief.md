@@ -47,8 +47,8 @@ Current official facts:
 
 - Codex plugins can package skills, MCP servers, agents, hooks, commands, and assets with a `.codex-plugin/plugin.json` manifest.
 - Codex has an official plugin marketplace and app directory experience, plus local and Git-backed marketplace sources.
-- OpenAI's Codex plugin docs currently describe official public plugin publishing as coming soon; repo-local and personal marketplace testing are the practical near-term path.
-- The observed local CLI exposes `codex marketplace add <source>` for adding a marketplace root.
+- OpenAI provides a public plugin submission portal for skills-only, app-only, and combined app-plus-skills plugins; submitters need the required organization role and a verified developer or business identity.
+- The current CLI exposes `codex plugin marketplace add <source>` for adding a marketplace root, followed by `codex plugin add <plugin> --marketplace <name>` to install a plugin.
 - Codex can add MCP servers with `codex mcp add <name> --url <server-url>` or via `~/.codex/config.toml`.
 - ChatGPT developer mode is a beta feature with full MCP client access for read and write tools.
 - ChatGPT developer mode supports SSE and streaming HTTP remote MCP servers.
@@ -70,7 +70,7 @@ Vulca implication:
 
 - Ship a Codex repo-local marketplace package first, using `plugins/vulca/.codex-plugin/plugin.json`.
 - Keep the Codex plugin self-contained with copied skill files and a local `vulca-mcp` declaration.
-- Treat official Codex public listing as a later submission path until OpenAI's public plugin publishing flow is available.
+- Use the OpenAI plugin submission portal only after the local marketplace package and any MCP-backed app surface pass their respective review gates.
 - Ship a local MCP guide for Codex alongside the plugin, using the existing `vulca-mcp` server.
 - Design a remote MCP profile separately, with a conservative default tool set and explicit approval guidance.
 - Recommended initial remote MCP allowlist: `list_traditions`, `get_tradition_guide`, `search_traditions`, `compose_prompt_from_design`, `evaluate_artwork`, `view_image` only after path/security handling is settled.
