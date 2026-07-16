@@ -494,7 +494,7 @@ def slide7():
         884, FONT_LABEL, MUTED)
 
     _hrule(d, 928, color=RULE)
-    _draw_text_centered(d, "本 carousel 用了 4 / 22  ·  github.com/vulca-org/vulca", 956, FONT_BODY, INK)
+    _draw_text_centered(d, "本 carousel 用了 4 / 22  ·  github.com/vulca-org/vulca-visual-control-sdk", 956, FONT_BODY, INK)
     _draw_text_centered(d, 'pip install "vulca[mcp]==0.17.12"', 1028, FONT_MONO, GOLD)
     canvas.save(OUT / "slide7.png", "PNG", optimize=True)
 

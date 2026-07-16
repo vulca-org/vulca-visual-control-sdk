@@ -75,7 +75,7 @@ Vulca 是开源的,今天连 ship 了 v0.17.12 / 13 / 14 三连发——评论�
 ## 💬 置顶评论(发布后自己评论 + 长按设置)
 
 ```
-GitHub: https://github.com/vulca-org/vulca
+GitHub: https://github.com/vulca-org/vulca-visual-control-sdk
 
 pip install "vulca[mcp]==0.17.14"
 
