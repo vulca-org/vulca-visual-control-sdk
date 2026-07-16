@@ -272,6 +272,8 @@ class TestCreateWithMock:
     def test_acreate_uses_env_url(self):
         """acreate reads VULCA_API_URL from environment."""
         import os
+        from urllib.parse import urlsplit
+
         import httpx
 
         mock_response = MagicMock()
@@ -293,7 +295,7 @@ class TestCreateWithMock:
 
             # Verify the URL was used
             call_args = mock_client.post.call_args
-            assert "custom.api.com" in call_args[0][0]
+            assert urlsplit(call_args[0][0]).hostname == "custom.api.com"
         finally:
             if orig:
                 os.environ["VULCA_API_URL"] = orig
