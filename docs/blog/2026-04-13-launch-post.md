@@ -3,16 +3,16 @@ title: "I Built a Free Local AI Art Pipeline on My Mac — Here's What Broke"
 published: false
 tags: python, machinelearning, opensource, ai
 series: vulca
-cover_image: https://raw.githubusercontent.com/vulca-org/vulca/master/assets/demo/v3/readme/tradition_grid.png
+cover_image: https://raw.githubusercontent.com/vulca-org/vulca-visual-control-sdk/master/assets/demo/v3/readme/tradition_grid.png
 ---
 
 What if you could run a complete AI art creation pipeline — 13 cultural traditions, 5-dimension scoring, structured layer generation — entirely on your MacBook, for free?
 
 No cloud API key. No GPU server. Just `pip install vulca`.
 
-![Chinese Xieyi ink wash landscape](https://raw.githubusercontent.com/vulca-org/vulca/master/assets/demo/v3/gallery/chinese_xieyi.png)
-![Japanese traditional snow temple](https://raw.githubusercontent.com/vulca-org/vulca/master/assets/demo/v3/gallery/japanese_traditional.png)
-![Brand design tea packaging](https://raw.githubusercontent.com/vulca-org/vulca/master/assets/demo/v3/gallery/brand_design.png)
+![Chinese Xieyi ink wash landscape](https://raw.githubusercontent.com/vulca-org/vulca-visual-control-sdk/master/assets/demo/v3/gallery/chinese_xieyi.png)
+![Japanese traditional snow temple](https://raw.githubusercontent.com/vulca-org/vulca-visual-control-sdk/master/assets/demo/v3/gallery/japanese_traditional.png)
+![Brand design tea packaging](https://raw.githubusercontent.com/vulca-org/vulca-visual-control-sdk/master/assets/demo/v3/gallery/brand_design.png)
 
 *Three traditions, one SDK — generated locally via ComfyUI/SDXL on Apple Silicon, zero cloud API cost.*
 
@@ -30,7 +30,7 @@ $ vulca evaluate art.png -t chinese_xieyi --mode reference
     L5 Philosophical Aesthetics  ██████████████████░░ 90%  ✓
 ```
 
-This post is not a product announcement. It is a technical deep dive into what it took to build [VULCA](https://github.com/vulca-org/vulca) — the bugs we hit, the architectural decisions we made, and the code that holds it together.
+This post is not a product announcement. It is a technical deep dive into what it took to build [VULCA](https://github.com/vulca-org/vulca-visual-control-sdk) — the bugs we hit, the architectural decisions we made, and the code that holds it together.
 
 ---
 
@@ -127,7 +127,7 @@ workflow = {
 }
 ```
 
-That is from [`src/vulca/providers/comfyui.py` lines 42-62](https://github.com/vulca-org/vulca/blob/master/src/vulca/providers/comfyui.py#L42). It constructs a standard SDXL pipeline: checkpoint loader, empty latent, two CLIP text encoders (positive + negative), KSampler, VAE decode, save. The workflow is submitted as a single POST to `/prompt`, and VULCA polls `/history/{prompt_id}` until the image is ready.
+That is from [`src/vulca/providers/comfyui.py` lines 42-62](https://github.com/vulca-org/vulca-visual-control-sdk/blob/master/src/vulca/providers/comfyui.py#L42). It constructs a standard SDXL pipeline: checkpoint loader, empty latent, two CLIP text encoders (positive + negative), KSampler, VAE decode, save. The workflow is submitted as a single POST to `/prompt`, and VULCA polls `/history/{prompt_id}` until the image is ready.
 
 After the image comes back, VULCA validates it is actually a valid PNG before accepting it:
 
@@ -139,7 +139,7 @@ if len(raw_bytes) < 1000 or raw_bytes[:4] != b'\x89PNG':
     )
 ```
 
-That validation was added in commit [`fdc0e45`](https://github.com/vulca-org/vulca/commit/fdc0e45) after we discovered that certain PyTorch MPS bugs cause ComfyUI to return 4KB files with valid PNG headers but all-zero pixel data.
+That validation was added in commit [`fdc0e45`](https://github.com/vulca-org/vulca-visual-control-sdk/commit/fdc0e45) after we discovered that certain PyTorch MPS bugs cause ComfyUI to return 4KB files with valid PNG headers but all-zero pixel data.
 
 ---
 
@@ -207,7 +207,7 @@ result = await vulca.aevaluate(
 print(result.score, result.l1, result.l2, result.l3, result.l4, result.l5)
 ```
 
-The full `aevaluate()` signature from [`src/vulca/evaluate.py`](https://github.com/vulca-org/vulca/blob/master/src/vulca/evaluate.py#L12):
+The full `aevaluate()` signature from [`src/vulca/evaluate.py`](https://github.com/vulca-org/vulca-visual-control-sdk/blob/master/src/vulca/evaluate.py#L12):
 
 ```python
 async def aevaluate(
@@ -240,7 +240,7 @@ The pipeline works like this:
 4. **Luminance keying** — non-background layers are keyed to remove canvas color, producing clean alpha
 5. **Alpha composite** — layers are composited in order to produce the final artwork
 
-![Layered exploded view](https://raw.githubusercontent.com/vulca-org/vulca/master/assets/demo/v3/readme/layered_exploded.png)
+![Layered exploded view](https://raw.githubusercontent.com/vulca-org/vulca-visual-control-sdk/master/assets/demo/v3/readme/layered_exploded.png)
 *Layer decomposition: paper, distant mountains, forest, calligraphy, composite*
 
 ### Serial-First Style Anchoring
@@ -249,7 +249,7 @@ The first layer generates serially as a style anchor. Its raw RGB output becomes
 
 ### The Prompt Builder
 
-The core of layer generation is `build_anchored_layer_prompt()` in [`src/vulca/layers/layered_prompt.py`](https://github.com/vulca-org/vulca/blob/master/src/vulca/layers/layered_prompt.py#L47). This function wraps the plan's regeneration prompt in four mandatory anchor blocks: canvas, content (with negative list), spatial, style.
+The core of layer generation is `build_anchored_layer_prompt()` in [`src/vulca/layers/layered_prompt.py`](https://github.com/vulca-org/vulca-visual-control-sdk/blob/master/src/vulca/layers/layered_prompt.py#L47). This function wraps the plan's regeneration prompt in four mandatory anchor blocks: canvas, content (with negative list), spatial, style.
 
 ```python
 @dataclass(frozen=True)
@@ -339,7 +339,7 @@ The result: literal ship anchors appearing on rice paper backgrounds in Chinese 
 
 The fix was trivial once diagnosed. Rename the headers to `[CANVAS]`, `[STYLE]`, `[CONTENT]`, `[SPATIAL]`. No word that could be interpreted as visual content.
 
-Commit: [`b168178`](https://github.com/vulca-org/vulca/commit/b168178) — `fix(layers): remove ANCHOR from prompt headers — SDXL paints literal anchors`
+Commit: [`b168178`](https://github.com/vulca-org/vulca-visual-control-sdk/commit/b168178) — `fix(layers): remove ANCHOR from prompt headers — SDXL paints literal anchors`
 
 The lesson: CLIP-based models do not have a concept of "metadata" or "instructions" in a prompt. Every token is content. If your prompt engineering uses structured headers, every header word will influence the generated image.
 
@@ -357,7 +357,7 @@ misty mountains after spring rain, traditional brushwork, ink wash, on aged xuan
 
 Plus a separate `negative_prompt` field (other layer roles to avoid). The subject comes first so it is guaranteed to be within CLIP's 77-token window.
 
-Commit: [`74f9952`](https://github.com/vulca-org/vulca/commit/74f9952) — `fix(layers): CLIP-aware prompt compression for SDXL — flat <70 token prompt`
+Commit: [`74f9952`](https://github.com/vulca-org/vulca-visual-control-sdk/commit/74f9952) — `fix(layers): CLIP-aware prompt compression for SDXL — flat <70 token prompt`
 
 The `LayerPromptResult` dataclass was added specifically for this:
 
@@ -425,9 +425,9 @@ cd ~/dev/ComfyUI
 ./venv/bin/python main.py --listen 0.0.0.0 --port 8188
 ```
 
-Pin `torch==2.9.0`. That is the entire fix. We wrote a [complete Apple Silicon MPS + ComfyUI/SDXL Compatibility Guide](https://github.com/vulca-org/vulca/blob/master/docs/apple-silicon-mps-comfyui-guide.md) that covers diagnosis, workarounds (CPU VAE, force-fp32), environment variables, and verification steps.
+Pin `torch==2.9.0`. That is the entire fix. We wrote a [complete Apple Silicon MPS + ComfyUI/SDXL Compatibility Guide](https://github.com/vulca-org/vulca-visual-control-sdk/blob/master/docs/apple-silicon-mps-comfyui-guide.md) that covers diagnosis, workarounds (CPU VAE, force-fp32), environment variables, and verification steps.
 
-The guide is at [`docs/apple-silicon-mps-comfyui-guide.md`](https://github.com/vulca-org/vulca/blob/master/docs/apple-silicon-mps-comfyui-guide.md) in the repo.
+The guide is at [`docs/apple-silicon-mps-comfyui-guide.md`](https://github.com/vulca-org/vulca-visual-control-sdk/blob/master/docs/apple-silicon-mps-comfyui-guide.md) in the repo.
 
 ---
 
@@ -435,7 +435,7 @@ The guide is at [`docs/apple-silicon-mps-comfyui-guide.md`](https://github.com/v
 
 Once you have layers, you can edit them individually without regenerating the entire artwork.
 
-![Inpaint comparison](https://raw.githubusercontent.com/vulca-org/vulca/master/assets/demo/v3/readme/inpaint_comparison.png)
+![Inpaint comparison](https://raw.githubusercontent.com/vulca-org/vulca-visual-control-sdk/master/assets/demo/v3/readme/inpaint_comparison.png)
 
 ```bash
 # Redraw a specific layer with a new instruction
@@ -464,12 +464,12 @@ The inpaint path uses the same provider architecture. ComfyUI receives an inpain
 
 The local provider path was stabilized across these commits:
 
-- [`b168178`](https://github.com/vulca-org/vulca/commit/b168178) — remove ANCHOR from prompt headers
-- [`42e0e3d`](https://github.com/vulca-org/vulca/commit/42e0e3d) — skip keying for background layers
-- [`fdc0e45`](https://github.com/vulca-org/vulca/commit/fdc0e45) — validate ComfyUI PNG response
-- [`74f9952`](https://github.com/vulca-org/vulca/commit/74f9952) — CLIP-aware prompt compression
-- [`e840496`](https://github.com/vulca-org/vulca/commit/e840496) — MPS compatibility guide
-- [`485067e`](https://github.com/vulca-org/vulca/commit/485067e) — v0.15.1 release
+- [`b168178`](https://github.com/vulca-org/vulca-visual-control-sdk/commit/b168178) — remove ANCHOR from prompt headers
+- [`42e0e3d`](https://github.com/vulca-org/vulca-visual-control-sdk/commit/42e0e3d) — skip keying for background layers
+- [`fdc0e45`](https://github.com/vulca-org/vulca-visual-control-sdk/commit/fdc0e45) — validate ComfyUI PNG response
+- [`74f9952`](https://github.com/vulca-org/vulca-visual-control-sdk/commit/74f9952) — CLIP-aware prompt compression
+- [`e840496`](https://github.com/vulca-org/vulca-visual-control-sdk/commit/e840496) — MPS compatibility guide
+- [`485067e`](https://github.com/vulca-org/vulca-visual-control-sdk/commit/485067e) — v0.15.1 release
 
 ### Roadmap
 
@@ -549,16 +549,16 @@ It is built on peer-reviewed research (EMNLP 2025 Findings), tested against 7,41
 
 ### Links
 
-- **GitHub**: [https://github.com/vulca-org/vulca](https://github.com/vulca-org/vulca)
+- **GitHub**: [https://github.com/vulca-org/vulca-visual-control-sdk](https://github.com/vulca-org/vulca-visual-control-sdk)
 - **PyPI**: [https://pypi.org/project/vulca/](https://pypi.org/project/vulca/)
-- **MPS Guide**: [`docs/apple-silicon-mps-comfyui-guide.md`](https://github.com/vulca-org/vulca/blob/master/docs/apple-silicon-mps-comfyui-guide.md)
+- **MPS Guide**: [`docs/apple-silicon-mps-comfyui-guide.md`](https://github.com/vulca-org/vulca-visual-control-sdk/blob/master/docs/apple-silicon-mps-comfyui-guide.md)
 - **Research**: [VULCA Framework (EMNLP 2025 Findings)](https://aclanthology.org/2025.findings-emnlp/) | [VULCA-Bench (arXiv)](https://arxiv.org/abs/2601.07986)
 
 [![PyPI](https://img.shields.io/pypi/v/vulca.svg)](https://pypi.org/project/vulca/)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://pypi.org/project/vulca/)
-[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-green.svg)](https://github.com/vulca-org/vulca/blob/master/LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-green.svg)](https://github.com/vulca-org/vulca-visual-control-sdk/blob/master/LICENSE)
 
-If this resonates, [star us on GitHub](https://github.com/vulca-org/vulca). Try it, break it, tell us what failed — [issues welcome](https://github.com/vulca-org/vulca/issues).
+If this resonates, [star us on GitHub](https://github.com/vulca-org/vulca-visual-control-sdk). Try it, break it, tell us what failed — [issues welcome](https://github.com/vulca-org/vulca-visual-control-sdk/issues).
 
 If you use VULCA in research, please cite:
 
@@ -570,5 +570,5 @@ If you use VULCA in research, please cite:
 }
 ```
 
-![Tradition grid](https://raw.githubusercontent.com/vulca-org/vulca/master/assets/demo/v3/readme/tradition_grid.png)
+![Tradition grid](https://raw.githubusercontent.com/vulca-org/vulca-visual-control-sdk/master/assets/demo/v3/readme/tradition_grid.png)
 *13 traditions. One SDK. Your machine.*

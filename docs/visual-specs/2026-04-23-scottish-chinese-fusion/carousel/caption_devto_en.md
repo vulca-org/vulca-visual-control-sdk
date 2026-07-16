@@ -19,10 +19,10 @@ The difference between path 1 and path 2 is **three markdown files** that an age
 
 This post walks through what that "structured prompt composition" actually is, the silent `input_fidelity` parameter drift we caught between `design.md` and the live `gpt-image-2` GA endpoint (and the `v0.17.12` fix shipped today), and how the same triad evaluates cross-cultural AI generation honestly (including an L2 hard-fail at `0.65` that we surface plus a `user-override-accept` we ALSO record).
 
-> Repo: <https://github.com/vulca-org/vulca>
+> Repo: <https://github.com/vulca-org/vulca-visual-control-sdk>
 > Install: `pip install "vulca[mcp]==0.17.14"`
 
-![Same gpt-image-2 API. Two totally different results. The difference is 3 markdown files.](https://raw.githubusercontent.com/vulca-org/vulca/master/docs/visual-specs/2026-04-23-scottish-chinese-fusion/carousel/slide1.png)
+![Same gpt-image-2 API. Two totally different results. The difference is 3 markdown files.](https://raw.githubusercontent.com/vulca-org/vulca-visual-control-sdk/master/docs/visual-specs/2026-04-23-scottish-chinese-fusion/carousel/slide1.png)
 
 ---
 
@@ -64,7 +64,7 @@ That's it. The "value" isn't a clever compiler; it's that **the prose, the termi
 
 Result (slide 1, right): the lanterns are painted, the calligraphy signage is gongbi 白描 (plain line drawing) on cinnabar panels — but the brick wall, spire, woman in purple jacket, and bus are recognizably the source photograph. The painterly elements read as *intent* (画意), not *filter*.
 
-![Glasgow street + Northern Song gongbi additive overlay — full Vulca-mediated result, openai/gpt-image-2 seed 7](https://raw.githubusercontent.com/vulca-org/vulca/master/docs/visual-specs/2026-04-23-scottish-chinese-fusion/carousel/slide2.png)
+![Glasgow street + Northern Song gongbi additive overlay — full Vulca-mediated result, openai/gpt-image-2 seed 7](https://raw.githubusercontent.com/vulca-org/vulca-visual-control-sdk/master/docs/visual-specs/2026-04-23-scottish-chinese-fusion/carousel/slide2.png)
 
 ## Decompose: 1 image → 10 editable semantic layers
 
@@ -101,7 +101,7 @@ All numbers below come from `manifest.json` `detection_report.per_entity[].pct_a
 
 The lanterns layer's `sam_score` is conspicuously low (`0.61` vs the others' 0.93–1.01). That's not a bug — it's the pipeline doing something honest: SAM was given **one bbox** for "row of red paper lanterns" and asked to mask the whole row as a single object. With six dispersed lanterns + tassels + occluding awning ropes, SAM returns a fragmented streak rather than six clean silhouettes. Multi-instance entity detection (per-lantern bbox + NMS-multi-output) is a `v0.18` backlog item; today's pipeline is `1 entity = 1 bbox = 1 mask`. **Slide 3's lanterns thumbnail looks "noisy" because that's the real shape of the mask.**
 
-![1 image → 10 editable semantic layers via YOLO + Grounding DINO + SAM + SegFormer](https://raw.githubusercontent.com/vulca-org/vulca/master/docs/visual-specs/2026-04-23-scottish-chinese-fusion/carousel/slide3.png)
+![1 image → 10 editable semantic layers via YOLO + Grounding DINO + SAM + SegFormer](https://raw.githubusercontent.com/vulca-org/vulca-visual-control-sdk/master/docs/visual-specs/2026-04-23-scottish-chinese-fusion/carousel/slide3.png)
 
 A practical workflow note: DINO open-vocabulary detection has a "phrase contamination" failure mode where one entity's label tokens bleed into another entity's matched_phrase. If you ask for both "Chinese calligraphy sign on red panel" and "large Chinese calligraphy signage" in the same plan, DINO may union the bbox into a single region. The defense is: *give each entity a phrase-distinct label*. We renamed `sign_top` to "red panel calligraphy plaque" and `sign_right` to "tall vertical golden plaque" — both detect cleanly.
 
@@ -131,7 +131,7 @@ The agent now has two paths for the lanterns layer:
 
 Vulca exposes both paths via MCP. The choosing happens in the agent, not in a static pipeline.
 
-![Same layer, two paths — alpha-isolated lantern silhouettes vs gpt-image-2 + gongbi prompt reinterpretation](https://raw.githubusercontent.com/vulca-org/vulca/master/docs/visual-specs/2026-04-23-scottish-chinese-fusion/carousel/slide4.png)
+![Same layer, two paths — alpha-isolated lantern silhouettes vs gpt-image-2 + gongbi prompt reinterpretation](https://raw.githubusercontent.com/vulca-org/vulca-visual-control-sdk/master/docs/visual-specs/2026-04-23-scottish-chinese-fusion/carousel/slide4.png)
 
 ## Honest scoring — `mode="rubric_only"` + agent self-grade
 
@@ -172,7 +172,7 @@ This is the **dual-judgment provenance** pattern. The strict rubric retains tech
 
 `design.md`'s `rollback_trigger` is a separate concern: it fires only when *all 3 main seeds score L1<0.6 OR L3<0.6*. Neither condition was met (L1=0.78, L3=0.72), so the L2 hard-fail surfaces as **honest disclosure**, not as a rollback signal. Different gates for different purposes.
 
-![plan.md verdict trail — L1 0.78, L2 0.65 (hard-fail), L3 0.72, L4 0.75, L5 0.65, weighted 0.702 → strict reject → user-override-accept; both judgments archived](https://raw.githubusercontent.com/vulca-org/vulca/master/docs/visual-specs/2026-04-23-scottish-chinese-fusion/carousel/slide5.png)
+![plan.md verdict trail — L1 0.78, L2 0.65 (hard-fail), L3 0.72, L4 0.75, L5 0.65, weighted 0.702 → strict reject → user-override-accept; both judgments archived](https://raw.githubusercontent.com/vulca-org/vulca-visual-control-sdk/master/docs/visual-specs/2026-04-23-scottish-chinese-fusion/carousel/slide5.png)
 
 ## The triad — three markdown files
 
@@ -194,7 +194,7 @@ docs/visual-specs/2026-04-23-scottish-chinese-fusion/
 └── carousel/                        ← this 6-slide deck
 ```
 
-![The whole project, in 3 markdown files: proposal.md / design.md / plan.md + a directory of artifacts. Pixels reproducible from markdown. The markdown is the product.](https://raw.githubusercontent.com/vulca-org/vulca/master/docs/visual-specs/2026-04-23-scottish-chinese-fusion/carousel/slide6.png)
+![The whole project, in 3 markdown files: proposal.md / design.md / plan.md + a directory of artifacts. Pixels reproducible from markdown. The markdown is the product.](https://raw.githubusercontent.com/vulca-org/vulca-visual-control-sdk/master/docs/visual-specs/2026-04-23-scottish-chinese-fusion/carousel/slide6.png)
 
 Three markdown files lock the entire decision trail:
 
@@ -226,7 +226,7 @@ Add to your Claude Code MCP config:
 
 Then in your Claude Code session, type `/visual-brainstorm` to start a fresh visual project, or `/decompose <image>` to break an existing image into editable layers. The full 22-tool MCP surface is documented in `docs/`.
 
-GitHub: <https://github.com/vulca-org/vulca>
+GitHub: <https://github.com/vulca-org/vulca-visual-control-sdk>
 
 ## Closing note
 

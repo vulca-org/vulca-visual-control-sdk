@@ -26,7 +26,7 @@ Vulca turns fuzzy visual intent into reviewable artifacts: discovery notes, dire
 
 - Product name: `Vulca`
 - Category: developer tools, productivity, or creative workflow
-- Repository: `https://github.com/vulca-org/vulca`
+- Repository: `https://github.com/vulca-org/vulca-visual-control-sdk`
 - Primary value: agent-native visual control for creative workflows
 - Privacy note: local files stay local unless the user configures and approves a provider-backed operation.
 

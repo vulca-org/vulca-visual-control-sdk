@@ -6,7 +6,7 @@ I let Claude decompose Justin Bieber's Coachella 2026 photos - 9 slides showing 
 
 ## Version B - dev.to blog intro (paragraph)
 
-I've been experimenting with an agent-native split for image editing: the LLM is the brain, the SDK is the hands and eyes, and there is no model call inside the library itself. To stress-test it, I pointed Claude Code at three Bieber Coachella 2026 frames and asked for a full layer decomposition - subject, stage background, and face parts. Claude read each photo, wrote a small JSON plan describing the targets, and handed it to the Vulca SDK, which stitched YOLO + Grounding DINO + SAM + SegFormer into a hierarchical resolve with a residual "honesty" layer. The manifest came back to the agent for a quality check before anything was shown to a human. Three poses, one pipeline, 485 layers across the full 47-image showcase, zero manual masking. Source: https://github.com/vulca-org/vulca
+I've been experimenting with an agent-native split for image editing: the LLM is the brain, the SDK is the hands and eyes, and there is no model call inside the library itself. To stress-test it, I pointed Claude Code at three Bieber Coachella 2026 frames and asked for a full layer decomposition - subject, stage background, and face parts. Claude read each photo, wrote a small JSON plan describing the targets, and handed it to the Vulca SDK, which stitched YOLO + Grounding DINO + SAM + SegFormer into a hierarchical resolve with a residual "honesty" layer. The manifest came back to the agent for a quality check before anything was shown to a human. Three poses, one pipeline, 485 layers across the full 47-image showcase, zero manual masking. Source: https://github.com/vulca-org/vulca-visual-control-sdk
 
 ## Version C - Show HN title + TLDR
 

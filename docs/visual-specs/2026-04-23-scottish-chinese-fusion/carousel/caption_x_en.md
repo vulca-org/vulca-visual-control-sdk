@@ -50,7 +50,7 @@ Vulca exposes both paths (alpha-iso + LLM redraw) via MCP. The agent picks per i
 ```
 plan.md verdict trail: L2=0.65 hard-fails 0.70 (single-pass diffusion can't simulate 三矾九染 multi-wash physics — category ceiling). Strict rubric: reject. Maintainer: user-override-accept. Both archived.
 
-Open source: github.com/vulca-org/vulca
+Open source: github.com/vulca-org/vulca-visual-control-sdk
 ```
 
 (268 chars)
