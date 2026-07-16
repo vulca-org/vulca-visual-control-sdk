@@ -31,7 +31,7 @@ class EvaluatePhase:
         import hashlib
 
         round_num = len(brief.generations) + 1
-        seed = hashlib.md5(f"{brief.session_id}:{round_num}".encode()).digest()
+        seed = hashlib.sha256(f"{brief.session_id}:{round_num}".encode()).digest()
 
         # Brief completeness drives base score: 0.45 (empty) → 0.70 (complete)
         completeness = sum([
