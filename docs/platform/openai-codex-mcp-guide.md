@@ -36,13 +36,12 @@ python scripts/sync_plugin.py
 python scripts/sync_plugin.py --check
 ```
 
-Observed local CLI:
+Current Codex CLI:
 
 ```bash
-codex marketplace add .
+codex plugin marketplace add .
+codex plugin add vulca --marketplace vulca-visual-agent-plugin
 ```
-
-Official docs may show a `codex plugin marketplace add` form. Verify the installed CLI before publishing install instructions.
 
 ## Local Codex MCP
 

@@ -8,7 +8,7 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://pypi.org/project/vulca/)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-green.svg)](https://github.com/vulca-org/vulca-visual-control-sdk/blob/master/LICENSE)
 [![CI](https://github.com/vulca-org/vulca-visual-control-sdk/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/vulca-org/vulca-visual-control-sdk/actions/workflows/ci.yml)
-[![MCP Tools](https://img.shields.io/badge/MCP_tools-current-blueviolet.svg)](https://github.com/vulca-org/vulca-plugin)
+[![MCP Tools](https://img.shields.io/badge/MCP_tools-current-blueviolet.svg)](https://github.com/vulca-org/vulca-visual-agent-plugin)
 
 **Vulca turns fuzzy visual intent into controlled creative production.**
 
@@ -99,7 +99,7 @@ Claude: 5 layers extracted — each person figure isolated, drapery and ground s
 
 ```bash
 pip install vulca[mcp]==0.23.1
-claude plugin install vulca-org/vulca-plugin
+claude plugin install vulca-org/vulca-visual-agent-plugin
 ```
 
 Then in Claude Code: `> /decompose /path/to/your_image.jpg`
@@ -529,7 +529,7 @@ From an agent: `/evaluate` calls the `evaluate_artwork` MCP tool and returns evo
 ## Support
 
 - **Issues:** [github.com/vulca-org/vulca-visual-control-sdk/issues](https://github.com/vulca-org/vulca-visual-control-sdk/issues) — bug reports, feature requests, workflow needs that should become a skill
-- **Plugin:** [vulca-org/vulca-plugin](https://github.com/vulca-org/vulca-plugin) — version-tracked with the SDK; install in Claude Code, Gemini CLI, or Codex Desktop/CLI
+- **Plugin:** [vulca-org/vulca-visual-agent-plugin](https://github.com/vulca-org/vulca-visual-agent-plugin) — version-tracked with the SDK; install in Claude Code, Gemini CLI, or Codex Desktop/CLI
 - **Web platform:** [vulcaart.art](https://vulcaart.art) and [vulca-platform](https://github.com/yha9806/vulca-platform) — the deployed demo/site and platform workspace
 - **Skill source:** [`.claude/skills/decompose/SKILL.md`](.claude/skills/decompose/SKILL.md) in this repo — the only source of truth for the `/decompose` flow
 - **Skill source:** [`.claude/skills/visual-discovery/SKILL.md`](.claude/skills/visual-discovery/SKILL.md) — **`/visual-discovery`** explores fuzzy visual intent into taste profile, culture analysis, direction cards, and proposal-ready handoff. It is text/artifact-first: mock sketch records are allowed by default; real provider sketch generation requires explicit opt-in. The Codex/Superpowers mirror lives at [`.agents/skills/visual-discovery/SKILL.md`](.agents/skills/visual-discovery/SKILL.md).
