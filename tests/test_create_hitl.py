@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
+from unittest.mock import AsyncMock, patch
+
 import pytest
 
-from vulca.create import acreate, create
+from vulca.create import _create_local, acreate, create
+from vulca.pipeline.types import PipelineOutput
 from vulca.types import CreateResult
 
 
@@ -35,6 +39,53 @@ class TestCreateHITL:
         result = create("test artwork", provider="mock", mode="local", hitl=True)
         assert result.status == "waiting_human"
         assert result.interrupted_at == "decide"
+
+    def test_create_accepts_content_lock_argument(self):
+        result = create(
+            "Ink and wash painting of bamboo beside calligraphy.",
+            provider="mock",
+            mode="local",
+            content_lock=True,
+        )
+
+        assert result.status == "completed"
+
+    def test_create_accepts_output_is_artwork_itself_argument(self):
+        result = create(
+            "Socialist Realism propaganda poster with workers.",
+            provider="mock",
+            mode="local",
+            output_is_artwork_itself=True,
+        )
+
+        assert result.status == "completed"
+
+    def test_create_local_exposes_content_fidelity_audit_fields(self):
+        output = PipelineOutput(
+            session_id="s1",
+            status="completed",
+            final_scores={"L1": 0.25},
+            weighted_total=0.25,
+            risk_flags=["content_fidelity_failed"],
+            content_fidelity_gate={
+                "forbidden_visual_artifacts": ["visible sample ID"],
+                "unwanted_visible_text": True,
+                "output_is_artwork_itself": False,
+            },
+            evaluation_source="mock_fallback",
+            evaluation_error="Could not parse JSON from LLM output",
+        )
+
+        with patch("vulca.pipeline.engine.execute", new=AsyncMock(return_value=output)):
+            result = asyncio.run(_create_local("test artwork", provider="mock"))
+
+        assert result.risk_flags == ["content_fidelity_failed"]
+        assert result.content_fidelity_gate["forbidden_visual_artifacts"] == [
+            "visible sample ID"
+        ]
+        assert result.evaluation_source == "mock_fallback"
+        assert result.evaluation_error == "Could not parse JSON from LLM output"
+        assert result.raw["content_fidelity_gate"] == result.content_fidelity_gate
 
 
 class TestCreateWeights:

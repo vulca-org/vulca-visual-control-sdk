@@ -6,6 +6,7 @@ import asyncio
 import base64
 import hashlib
 import logging
+import re
 import time
 from typing import Any
 
@@ -52,6 +53,10 @@ _REFINEMENT_STRATEGIES: dict[str, str] = {
 }
 
 
+def _looks_like_sample_id(value: str) -> bool:
+    return bool(re.fullmatch(r"[a-z][a-z0-9]*[_-]\d{2,}", value.strip(), re.IGNORECASE))
+
+
 class GenerateNode(PipelineNode):
     """Generate an image from a text prompt via the Provider Registry.
 
@@ -91,6 +96,24 @@ class GenerateNode(PipelineNode):
         from vulca.providers import get_image_provider
 
         prompt = ctx.get("prompt") or ctx.subject or ctx.intent
+        node_params = ctx.get("node_params") or {}
+        gen_params = node_params.get("generate") or {}
+
+        content_lock_data = gen_params.get("content_lock")
+        if content_lock_data:
+            from vulca.content_lock import (
+                build_content_lock_prompt,
+                content_lock_from_dict,
+            )
+
+            content_lock = content_lock_from_dict(content_lock_data)
+            lock_prompt = build_content_lock_prompt(content_lock)
+            if lock_prompt:
+                original_prompt = ctx.intent or prompt
+                prompt = (
+                    f"{lock_prompt}\n\n"
+                    f"USER INTENT TO PRESERVE VERBATIM:\n{original_prompt}"
+                )
 
         # Build extra kwargs with cultural guidance + improvement instructions
         extra_kwargs: dict[str, Any] = {}
@@ -106,8 +129,6 @@ class GenerateNode(PipelineNode):
 
         # Resolve reference image (top-level or node_params)
         ref_b64 = ctx.get("reference_image_b64") or ""
-        node_params = ctx.get("node_params") or {}
-        gen_params = node_params.get("generate") or {}
         if not ref_b64:
             ref_b64 = gen_params.get("reference_image_b64", "")
 
@@ -140,11 +161,15 @@ class GenerateNode(PipelineNode):
                     provider_name, api_key=ctx.api_key
                 )
 
+            subject_for_provider = ctx.subject or ""
+            if content_lock_data and _looks_like_sample_id(subject_for_provider):
+                subject_for_provider = ""
+
             result = await asyncio.wait_for(
                 provider_instance.generate(
                     prompt,
                     tradition=ctx.tradition,
-                    subject=ctx.subject or "",
+                    subject=subject_for_provider,
                     reference_image_b64=ref_b64,
                     **extra_kwargs,
                 ),
@@ -236,7 +261,10 @@ class GenerateNode(PipelineNode):
         tradition = ctx.tradition or "default"
         bg = GenerateNode._TRADITION_COLORS.get(tradition, "#5F8A50")
         tradition_display = tradition.replace("_", " ").title()
-        subject_display = (ctx.subject or "Untitled")[:50]
+        subject_value = ctx.subject or "Untitled"
+        if _looks_like_sample_id(subject_value):
+            subject_value = "Untitled"
+        subject_display = subject_value[:50]
         # Escape XML special characters
         for old, new in [("&", "&amp;"), ("<", "&lt;"), (">", "&gt;"), ('"', "&quot;")]:
             subject_display = subject_display.replace(old, new)

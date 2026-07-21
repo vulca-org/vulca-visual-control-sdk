@@ -35,14 +35,17 @@ class EvaluateNode(PipelineNode):
         if not img_b64:
             logger.warning("EvaluateNode: no image_b64 in context, using mock scores")
             result = self._mock_scores(ctx)
-            return self._merge_algo_scores(result, algo_scores, algo_covered_dims, weights)
+            merged = self._merge_algo_scores(result, algo_scores, algo_covered_dims, weights)
+            return self._apply_content_fidelity_gate(ctx, merged)
 
         if VLM_SCORING not in provider_capabilities(ctx.provider) or not ctx.api_key:
             result = self._mock_scores(ctx)
-            return self._merge_algo_scores(result, algo_scores, algo_covered_dims, weights)
+            merged = self._merge_algo_scores(result, algo_scores, algo_covered_dims, weights)
+            return self._apply_content_fidelity_gate(ctx, merged)
 
         result = await self._vlm_scores(ctx, img_b64, img_mime)
-        return self._merge_algo_scores(result, algo_scores, algo_covered_dims, weights)
+        merged = self._merge_algo_scores(result, algo_scores, algo_covered_dims, weights)
+        return self._apply_content_fidelity_gate(ctx, merged)
 
     @staticmethod
     def _detect_algo_coverage(
@@ -152,6 +155,23 @@ class EvaluateNode(PipelineNode):
         return get_weights(ctx.tradition)
 
     @staticmethod
+    def _apply_content_fidelity_gate(
+        ctx: NodeContext,
+        result: dict[str, Any],
+    ) -> dict[str, Any]:
+        node_params = ctx.get("node_params") or {}
+        eval_params = node_params.get("evaluate") or {}
+        gate = result.get("content_fidelity_gate") or eval_params.get(
+            "content_fidelity_gate"
+        )
+        if not gate:
+            return result
+
+        from vulca.content_lock import apply_content_fidelity_gate
+
+        return apply_content_fidelity_gate(result, gate)
+
+    @staticmethod
     def _apply_locked_dimensions(
         new_scores: dict[str, float],
         locked: list[str],
@@ -206,6 +226,8 @@ class EvaluateNode(PipelineNode):
         from vulca._vlm import score_image
 
         eval_mode = ctx.get("eval_mode", "strict")
+        node_params = ctx.get("node_params") or {}
+        eval_params = node_params.get("evaluate") or {}
 
         data = await score_image(
             img_b64=img_b64,
@@ -214,19 +236,22 @@ class EvaluateNode(PipelineNode):
             tradition=ctx.tradition,
             api_key=ctx.api_key,
             mode=eval_mode,
+            content_lock=eval_params.get("content_lock"),
         )
 
         # If VLM failed (quota/network error), fall back to mock scores
         if data.get("error"):
             logger.warning("VLM scoring failed, falling back to mock: %s", data["error"])
-            return EvaluateNode._mock_scores(ctx)
+            fallback = EvaluateNode._mock_scores(ctx)
+            fallback["evaluation_source"] = "mock_fallback"
+            fallback["evaluation_error"] = str(data["error"])
+            return fallback
 
         scores = {f"L{i}": data.get(f"L{i}", 0.0) for i in range(1, 6)}
         rationales = {
             f"L{i}_rationale": data.get(f"L{i}_rationale", "") for i in range(1, 6)
         }
 
-        node_params = ctx.get("node_params") or {}
         locked_vlm: list[str] = (node_params.get("evaluate") or {}).get("locked_dimensions", [])
         previous_vlm: dict[str, float] = ctx.get("scores") or {}
         if locked_vlm and previous_vlm:
@@ -238,5 +263,9 @@ class EvaluateNode(PipelineNode):
         return {
             "scores": scores,
             "rationales": rationales,
+            "risk_flags": data.get("risk_flags", []),
             "weighted_total": round(weighted_total, 4),
+            "content_fidelity_gate": data.get("content_fidelity_gate"),
+            "evaluation_source": "vlm",
+            "evaluation_error": "",
         }

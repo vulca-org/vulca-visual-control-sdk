@@ -5,6 +5,7 @@ import io
 import sys
 import types as py_types
 
+import pytest
 from PIL import Image
 
 from vulca.providers.gemini import (
@@ -114,6 +115,43 @@ class TestGeminiProviderConfig:
         assert caps.supports_masked_edits is True
         assert caps.requires_mask_for_edits is True
         assert caps.supports_unmasked_edits is False
+
+    def test_generate_missing_candidate_parts_reports_no_image_data(self, monkeypatch):
+        class FakeImageConfig:
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+
+        class FakeGenerateContentConfig:
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+
+        class FakeModels:
+            def generate_content(self, *, model, contents, config):
+                return py_types.SimpleNamespace(
+                    candidates=[
+                        py_types.SimpleNamespace(
+                            content=py_types.SimpleNamespace(parts=None)
+                        )
+                    ],
+                    prompt_feedback=None,
+                )
+
+        class FakeClient:
+            def __init__(self, api_key):
+                self.models = FakeModels()
+
+        fake_types = py_types.SimpleNamespace(
+            ImageConfig=FakeImageConfig,
+            GenerateContentConfig=FakeGenerateContentConfig,
+        )
+        fake_genai = py_types.SimpleNamespace(Client=FakeClient, types=fake_types)
+        fake_google = py_types.SimpleNamespace(genai=fake_genai)
+        monkeypatch.setitem(sys.modules, "google", fake_google)
+        monkeypatch.setitem(sys.modules, "google.genai", fake_genai)
+        monkeypatch.setitem(sys.modules, "google.genai.types", fake_types)
+
+        with pytest.raises(RuntimeError, match="Gemini returned no image data"):
+            asyncio.run(GeminiImageProvider(api_key="gemini-key").generate("test"))
 
     def test_inpaint_with_mask_sends_source_and_mask_parts(
         self,

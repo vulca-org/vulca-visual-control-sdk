@@ -140,6 +140,9 @@ class PipelineOutput:
     total_cost_usd: float = 0.0
     risk_flags: list[str] = field(default_factory=list)
     recommendations: list[str] = field(default_factory=list)
+    content_fidelity_gate: dict[str, Any] = field(default_factory=dict)
+    evaluation_source: str = ""
+    evaluation_error: str = ""
     interrupted_at: str = ""
     summary: str = ""
     # Preserved for HITL resume — original user inputs
@@ -165,6 +168,9 @@ class PipelineOutput:
             "total_cost_usd": self.total_cost_usd,
             "risk_flags": self.risk_flags,
             "recommendations": self.recommendations,
+            "content_fidelity_gate": self.content_fidelity_gate,
+            "evaluation_source": self.evaluation_source,
+            "evaluation_error": self.evaluation_error,
             "interrupted_at": self.interrupted_at,
             "summary": self.summary,
             "original_intent": self.original_intent,

@@ -28,6 +28,10 @@ def parse_llm_json(text: str) -> dict:
     # Fix trailing commas before } or ]
     text = re.sub(r",\s*([}\]])", r"\1", text)
 
+    # Fix a rare LLM typo where a key starts with two double quotes:
+    #   { "L5": 0.7, ""missing_required_subjects": [] }
+    text = re.sub(r'([,{]\s*)""([A-Za-z_][A-Za-z0-9_]*"\s*:)', r'\1"\2', text)
+
     # Fix single quotes → double quotes (careful with apostrophes in text)
     # Only replace quotes that look like JSON keys/values
     text = re.sub(r"(?<=[\[{,:])\s*'([^']*?)'\s*(?=[,}\]:])", r' "\1"', text)

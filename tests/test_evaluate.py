@@ -407,3 +407,142 @@ class TestResultSerialization:
         )
         d = asdict(result)
         assert d["skills"]["brand"]["score"] == 0.8
+
+
+def test_evaluate_node_applies_vlm_content_fidelity_gate():
+    from vulca.content_lock import extract_content_lock
+    from vulca.pipeline.node import NodeContext
+    from vulca.pipeline.nodes import EvaluateNode
+
+    lock = extract_content_lock(
+        "Ink and wash painting of bamboo beside vertical Chinese calligraphy."
+    )
+    ctx = NodeContext(
+        subject="track1_0002",
+        intent=lock.original_intent,
+        tradition="chinese_xieyi",
+        provider="gemini",
+        api_key="fake-key",
+    )
+    ctx.set("image_b64", "iVBORw0KGgo=")
+    ctx.set("node_params", {"evaluate": {"content_lock": lock.to_dict()}})
+
+    scored = {
+        "L1": 0.95,
+        "L2": 0.92,
+        "L3": 1.0,
+        "L4": 1.0,
+        "L5": 0.94,
+        "L1_rationale": "Strong image.",
+        "L2_rationale": "Strong technique.",
+        "L3_rationale": "Strong style.",
+        "L4_rationale": "Respectful.",
+        "L5_rationale": "Poetic.",
+        "content_fidelity_gate": {
+            "required_subjects": ["bamboo"],
+            "missing_required_subjects": ["bamboo"],
+            "required_text_elements": ["vertical Chinese calligraphy"],
+            "missing_required_text_elements": [],
+        },
+    }
+
+    with patch("vulca._vlm.score_image", new=AsyncMock(return_value=scored)) as mock_score:
+        result = asyncio.run(EvaluateNode().run(ctx))
+
+    assert mock_score.await_args.kwargs["content_lock"] == lock.to_dict()
+    assert result["weighted_total"] == 0.25
+    assert result["scores"]["L3"] == 0.25
+    assert "content_fidelity_failed" in result["risk_flags"]
+
+
+def test_evaluate_node_applies_vlm_relation_semantics_gate():
+    from vulca.content_lock import extract_content_lock
+    from vulca.pipeline.node import NodeContext
+    from vulca.pipeline.nodes import EvaluateNode
+
+    lock = extract_content_lock(
+        "Wartime illustration of mounted soldiers beside fleeing civilians, "
+        "burning village ruins, and aircraft overhead."
+    )
+    ctx = NodeContext(
+        subject="track1_0747",
+        intent=lock.original_intent,
+        tradition="default",
+        provider="gemini",
+        api_key="fake-key",
+    )
+    ctx.set("image_b64", "iVBORw0KGgo=")
+    ctx.set("node_params", {"evaluate": {"content_lock": lock.to_dict()}})
+
+    scored = {
+        "L1": 0.95,
+        "L2": 0.92,
+        "L3": 1.0,
+        "L4": 1.0,
+        "L5": 0.94,
+        "L1_rationale": "Strong image.",
+        "L2_rationale": "Strong technique.",
+        "L3_rationale": "Strong style.",
+        "L4_rationale": "Respectful.",
+        "L5_rationale": "Poetic.",
+        "content_fidelity_gate": {
+            "required_relations": lock.required_relations,
+            "apparent_relations": ["mounted soldiers appear to chase civilians"],
+            "relation_semantics_failed": True,
+            "forbidden_readings_present": ["soldiers chasing civilians"],
+        },
+    }
+
+    with patch("vulca._vlm.score_image", new=AsyncMock(return_value=scored)):
+        result = asyncio.run(EvaluateNode().run(ctx))
+
+    assert result["weighted_total"] == 0.25
+    assert result["scores"]["L4"] == 0.25
+    assert "content_fidelity_failed" in result["risk_flags"]
+    assert "Relation semantics failed" in result["rationales"]["content_fidelity"]
+
+
+def test_evaluate_node_marks_vlm_parse_fallback_explicitly():
+    from vulca.pipeline.node import NodeContext
+    from vulca.pipeline.nodes import EvaluateNode
+
+    ctx = NodeContext(
+        subject="track1_0064",
+        intent="A Gongbi vertical hanging scroll with lotus blossoms.",
+        tradition="chinese_gongbi",
+        provider="gemini",
+        api_key="fake-key",
+    )
+    ctx.set("image_b64", "iVBORw0KGgo=")
+
+    scored = {
+        "error": "Could not parse JSON from LLM output",
+        "L1": 0.0,
+        "L2": 0.0,
+        "L3": 0.0,
+        "L4": 0.0,
+        "L5": 0.0,
+    }
+
+    with patch("vulca._vlm.score_image", new=AsyncMock(return_value=scored)):
+        result = asyncio.run(EvaluateNode().run(ctx))
+
+    assert result["evaluation_source"] == "mock_fallback"
+    assert result["evaluation_error"] == "Could not parse JSON from LLM output"
+
+
+def test_extract_scoring_falls_back_to_first_json_after_scratchpad():
+    from vulca._parse import parse_llm_json
+    from vulca._vlm import _extract_scoring
+
+    raw = """**Phase 1 - Scratchpad**
+<observation>
+The model ignored the requested subject. This note includes braces {not json}.
+</observation>
+{"L1": 0.2, "L2": 0.2, "L3": 0.1, "L4": 0.1, "L5": 0.2}
+"""
+
+    scoring = _extract_scoring(raw)
+    parsed = parse_llm_json(scoring)
+
+    assert parsed["L3"] == 0.1

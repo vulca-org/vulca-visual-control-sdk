@@ -81,6 +81,15 @@ def _build_visible_mask_reference(mask_bytes: bytes) -> bytes:
     return buf.getvalue()
 
 
+def _iter_image_parts(response: object):
+    candidates = getattr(response, "candidates", None) or []
+    for candidate in candidates:
+        content = getattr(candidate, "content", None)
+        parts = getattr(content, "parts", None) or []
+        for part in parts:
+            yield part
+
+
 class GeminiImageProvider:
     """Image generation via Google Gemini API.
 
@@ -217,19 +226,20 @@ class GeminiImageProvider:
             retryable_check=_is_retryable,
         )
 
-        if response.candidates:
-            for part in response.candidates[0].content.parts:
-                if part.inline_data and part.inline_data.mime_type.startswith("image/"):
-                    img_b64 = base64.b64encode(part.inline_data.data).decode()
-                    return ImageResult(
-                        image_b64=img_b64,
-                        mime=part.inline_data.mime_type,
-                        metadata={
-                            "model": self.model,
-                            "image_size": image_size,
-                            "aspect_ratio": aspect_ratio,
-                        },
-                    )
+        for part in _iter_image_parts(response):
+            inline_data = getattr(part, "inline_data", None)
+            mime_type = getattr(inline_data, "mime_type", "")
+            if inline_data and mime_type.startswith("image/"):
+                img_b64 = base64.b64encode(inline_data.data).decode()
+                return ImageResult(
+                    image_b64=img_b64,
+                    mime=mime_type,
+                    metadata={
+                        "model": self.model,
+                        "image_size": image_size,
+                        "aspect_ratio": aspect_ratio,
+                    },
+                )
 
         # No image data — classify the failure before surfacing the error so
         # users get an actionable remediation hint instead of a generic
@@ -375,20 +385,21 @@ class GeminiImageProvider:
             retryable_check=_is_retryable,
         )
 
-        if response.candidates:
-            for part in response.candidates[0].content.parts:
-                if part.inline_data and part.inline_data.mime_type.startswith("image/"):
-                    img_b64 = base64.b64encode(part.inline_data.data).decode()
-                    return ImageResult(
-                        image_b64=img_b64,
-                        mime=part.inline_data.mime_type,
-                        metadata={
-                            "model": self.model,
-                            "mode": "gemini_mask_adapter",
-                            "image_size": image_size,
-                            "aspect_ratio": aspect_ratio,
-                        },
-                    )
+        for part in _iter_image_parts(response):
+            inline_data = getattr(part, "inline_data", None)
+            mime_type = getattr(inline_data, "mime_type", "")
+            if inline_data and mime_type.startswith("image/"):
+                img_b64 = base64.b64encode(inline_data.data).decode()
+                return ImageResult(
+                    image_b64=img_b64,
+                    mime=mime_type,
+                    metadata={
+                        "model": self.model,
+                        "mode": "gemini_mask_adapter",
+                        "image_size": image_size,
+                        "aspect_ratio": aspect_ratio,
+                    },
+                )
 
         prompt_feedback = getattr(response, "prompt_feedback", None)
         block_reason = getattr(prompt_feedback, "block_reason", None) if prompt_feedback else None

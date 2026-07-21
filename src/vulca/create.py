@@ -25,6 +25,8 @@ async def acreate(
     reference: str = "",
     ref_type: str = "full",
     colors: str = "",
+    content_lock: bool = False,
+    output_is_artwork_itself: bool = False,
 ) -> CreateResult:
     """Create artwork via local pipeline or remote API (async).
 
@@ -55,6 +57,12 @@ async def acreate(
     reference:
         Reference image path or base64. Also serves as sketch input --
         providers treat both identically as ``reference_image_b64``.
+    content_lock:
+        Treat explicit subjects and visible attributes in the intent as
+        non-negotiable generation and evaluation requirements.
+    output_is_artwork_itself:
+        Treat the requested artwork as the full output surface. Generation and
+        evaluation should reject gallery/display/mockup artifacts.
 
     Returns
     -------
@@ -80,6 +88,9 @@ async def acreate(
             reference=reference,
             ref_type=ref_type,
             colors=colors,
+            api_key=api_key,
+            content_lock=content_lock,
+            output_is_artwork_itself=output_is_artwork_itself,
         )
     return await _create_remote(
         intent,
@@ -88,6 +99,8 @@ async def acreate(
         provider=provider,
         base_url=base_url,
         api_key=api_key,
+        content_lock=content_lock,
+        output_is_artwork_itself=output_is_artwork_itself,
     )
 
 
@@ -104,6 +117,9 @@ async def _create_local(
     reference: str = "",
     ref_type: str = "full",
     colors: str = "",
+    api_key: str = "",
+    content_lock: bool = False,
+    output_is_artwork_itself: bool = False,
 ) -> CreateResult:
     """Run the slim pipeline engine locally."""
     from vulca._image import resolve_image_input
@@ -116,6 +132,31 @@ async def _create_local(
     node_params: dict[str, dict] = {}
     if weights:
         node_params["evaluate"] = {"custom_weights": weights}
+
+    if content_lock or output_is_artwork_itself:
+        from vulca.content_lock import ContentLock, extract_content_lock
+
+        artifact_boundary = output_is_artwork_itself or content_lock
+        if content_lock:
+            lock = extract_content_lock(
+                intent,
+                output_is_artwork_itself=artifact_boundary,
+            )
+        else:
+            lock = ContentLock(
+                original_intent=" ".join(intent.strip().split()),
+                output_is_artwork_itself=artifact_boundary,
+            )
+        if lock.has_requirements or lock.output_is_artwork_itself:
+            lock_data = lock.to_dict()
+            node_params["generate"] = {
+                **node_params.get("generate", {}),
+                "content_lock": lock_data,
+            }
+            node_params["evaluate"] = {
+                **node_params.get("evaluate", {}),
+                "content_lock": lock_data,
+            }
 
     # Inject reference/colors into generate node params
     gen_params: dict[str, Any] = {}
@@ -132,6 +173,7 @@ async def _create_local(
         intent=intent,
         tradition=tradition or "default",
         provider=provider,
+        api_key=api_key,
         node_params=node_params,
         image_provider=image_provider,
         eval_mode=eval_mode,
@@ -163,6 +205,7 @@ async def _create_local(
             elif event.payload.get("image_b64"):
                 best_image_b64 = event.payload["image_b64"]
 
+    output_dict = output.to_dict()
     return CreateResult(
         session_id=output.session_id,
         mode="create",
@@ -178,12 +221,16 @@ async def _create_local(
         rounds=[r.to_dict() for r in output.rounds],
         summary=output.summary,
         recommendations=output.recommendations,
+        risk_flags=output.risk_flags,
+        content_fidelity_gate=output.content_fidelity_gate,
+        evaluation_source=output.evaluation_source,
+        evaluation_error=output.evaluation_error,
         suggestions=suggestions,
         deviation_types=deviation_types,
         eval_mode=eval_mode,
         latency_ms=output.total_latency_ms,
         cost_usd=output.total_cost_usd,
-        raw=output.to_dict(),
+        raw=output_dict,
     )
 
 
@@ -195,6 +242,8 @@ async def _create_remote(
     provider: str = "nb2",
     base_url: str = "",
     api_key: str = "",
+    content_lock: bool = False,
+    output_is_artwork_itself: bool = False,
 ) -> CreateResult:
     """Call remote VULCA API for creation."""
     import httpx
@@ -209,6 +258,10 @@ async def _create_remote(
         "provider": provider,
         "stream": False,
     }
+    if content_lock:
+        body["content_lock"] = True
+    if output_is_artwork_itself or content_lock:
+        body["output_is_artwork_itself"] = True
 
     headers = {"Content-Type": "application/json"}
     if key:
@@ -235,6 +288,10 @@ async def _create_remote(
         rounds=data.get("rounds") or [],
         summary=data.get("summary") or "",
         recommendations=data.get("recommendations") or [],
+        risk_flags=data.get("risk_flags") or [],
+        content_fidelity_gate=data.get("content_fidelity_gate") or {},
+        evaluation_source=data.get("evaluation_source") or "",
+        evaluation_error=data.get("evaluation_error") or "",
         latency_ms=data.get("latency_ms", 0),
         cost_usd=data.get("cost_usd", 0.0),
         raw=data,
@@ -257,6 +314,8 @@ def create(
     reference: str = "",
     ref_type: str = "full",
     colors: str = "",
+    content_lock: bool = False,
+    output_is_artwork_itself: bool = False,
 ) -> CreateResult:
     """Create artwork (synchronous wrapper).
 
@@ -282,6 +341,8 @@ def create(
         reference=reference,
         ref_type=ref_type,
         colors=colors,
+        content_lock=content_lock,
+        output_is_artwork_itself=output_is_artwork_itself,
     )
 
     if loop and loop.is_running():

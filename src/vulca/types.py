@@ -162,6 +162,18 @@ class CreateResult:
     recommendations: list[str] = field(default_factory=list)
     """Actionable recommendations."""
 
+    risk_flags: list[str] = field(default_factory=list)
+    """Risk and gate flags from evaluation, e.g. content_fidelity_failed."""
+
+    content_fidelity_gate: dict = field(default_factory=dict)
+    """Content-lock/artifact-boundary audit fields used by the final score gate."""
+
+    evaluation_source: str = ""
+    """Scoring source for the final candidate, e.g. vlm, mock, or mock_fallback."""
+
+    evaluation_error: str = ""
+    """Non-empty when scoring fell back after a VLM or parser error."""
+
     suggestions: dict[str, str] = field(default_factory=dict)
     """Per-dimension actionable suggestions (L1→suggestion text)."""
 

@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from vulca._vlm import (
+    _CONTENT_LOCK_MAX_TOKENS,
     _DEFAULT_MAX_TOKENS,
     _ESCALATED_MAX_TOKENS,
     _STATIC_SCORING_PREFIX,
@@ -236,3 +237,90 @@ class TestScoreImageTokenEscalation:
 
         # _MAX_ESCALATION_ATTEMPTS=1 means at most 2 calls total
         assert mock_acompletion.call_count == 2
+
+    def test_score_image_content_lock_gets_final_large_budget_on_second_truncation(self):
+        truncated = _make_mock_response("length", "<scoring>" + _VALID_SCORING_JSON + "</scoring>")
+        full_resp = _make_mock_response("stop", "<scoring>" + _VALID_SCORING_JSON + "</scoring>")
+        mock_acompletion = AsyncMock(side_effect=[truncated, truncated, full_resp])
+
+        with patch("litellm.acompletion", mock_acompletion):
+            result = asyncio.run(
+                score_image(
+                    img_b64="aGVsbG8=",
+                    mime="image/png",
+                    subject="test artwork",
+                    tradition="chinese_xieyi",
+                    api_key="test-key",
+                    content_lock={"original_intent": "test artwork"},
+                )
+            )
+
+        assert mock_acompletion.call_count == 3
+        assert [call.kwargs["max_tokens"] for call in mock_acompletion.call_args_list] == [
+            _DEFAULT_MAX_TOKENS,
+            _ESCALATED_MAX_TOKENS,
+            _CONTENT_LOCK_MAX_TOKENS,
+        ]
+        assert result.get("L1") == pytest.approx(0.8)
+
+    def test_score_image_adds_blind_relation_gate_for_required_relations(self):
+        from vulca.content_lock import extract_content_lock
+
+        lock = extract_content_lock(
+            "Wartime illustration of mounted soldiers beside fleeing civilians, "
+            "burning village ruins, and aircraft overhead."
+        )
+        scoring_json = (
+            '{"L1": 0.9, "L1_rationale": "ok", "L1_suggestion": "try", '
+            '"L1_deviation_type": "traditional", "L1_observations": "", "L1_reference_technique": "", '
+            '"L2": 0.9, "L2_rationale": "ok", "L2_suggestion": "try", '
+            '"L2_deviation_type": "traditional", "L2_observations": "", "L2_reference_technique": "", '
+            '"L3": 0.9, "L3_rationale": "ok", "L3_suggestion": "try", '
+            '"L3_deviation_type": "traditional", "L3_observations": "", "L3_reference_technique": "", '
+            '"L4": 0.9, "L4_rationale": "ok", "L4_suggestion": "try", '
+            '"L4_deviation_type": "traditional", "L4_observations": "", "L4_reference_technique": "", '
+            '"L5": 0.9, "L5_rationale": "ok", "L5_suggestion": "try", '
+            '"L5_deviation_type": "traditional", "L5_observations": "", "L5_reference_technique": "", '
+            '"missing_required_subjects": [], '
+            '"missing_required_text_elements": [], '
+            '"missing_required_surface": [], '
+            '"missing_required_style_attributes": [], '
+            '"apparent_relations": ["caption-conditioned escort"], '
+            '"relation_semantics_failed": false, '
+            '"forbidden_readings_present": [], '
+            '"forbidden_visual_artifacts": [], '
+            '"unwanted_visible_text": false, '
+            '"output_is_artwork_itself": true, '
+            '"risk_flags": []}'
+        )
+        blind_json = (
+            '{"visible_entities": ["mounted soldiers", "civilians"], '
+            '"primary_reading": "Mounted soldiers appear to chase fleeing civilians.", '
+            '"apparent_relations": ["mounted soldiers chasing civilians"], '
+            '"threat_cues": [], '
+            '"safety_cues": [], '
+            '"ambiguous_readings": [], '
+            '"confidence": 0.82}'
+        )
+        normal_resp = _make_mock_response("stop", f"<scoring>{scoring_json}</scoring>")
+        blind_resp = _make_mock_response("stop", blind_json)
+        mock_acompletion = AsyncMock(side_effect=[normal_resp, blind_resp])
+
+        with patch("litellm.acompletion", mock_acompletion):
+            result = asyncio.run(
+                score_image(
+                    img_b64="aGVsbG8=",
+                    mime="image/png",
+                    subject="track1_0747",
+                    tradition="default",
+                    api_key="test-key",
+                    content_lock=lock.to_dict(),
+                )
+            )
+
+        assert mock_acompletion.call_count == 2
+        gate = result["content_fidelity_gate"]
+        assert gate["blind_relation_decision"] == "reject"
+        assert gate["blind_forbidden_readings_present"] == [
+            "soldiers chasing civilians"
+        ]

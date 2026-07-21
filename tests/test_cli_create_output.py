@@ -5,6 +5,7 @@ from __future__ import annotations
 import subprocess
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -78,3 +79,41 @@ class TestCreateOutputParam:
         # PNG magic bytes: 89 50 4E 47
         data = out_file.read_bytes()
         assert data[:4] == b'\x89PNG' or len(data) > 0, "File should be valid PNG or non-empty image"
+
+    def test_create_cli_accepts_content_lock_flag(self, capsys):
+        """create --content-lock should pass content_lock=True to the API."""
+        from vulca.cli import main
+        from vulca.types import CreateResult
+
+        with patch("vulca.create", return_value=CreateResult(session_id="s1")) as mock_create:
+            main([
+                "create",
+                "Ink and wash painting of bamboo beside calligraphy.",
+                "--content-lock",
+                "--provider",
+                "mock",
+                "--json",
+            ])
+
+        captured = capsys.readouterr()
+        assert '"session_id": "s1"' in captured.out
+        assert mock_create.call_args.kwargs["content_lock"] is True
+
+    def test_create_cli_accepts_output_is_artwork_itself_flag(self, capsys):
+        """create --output-is-artwork-itself should pass the artifact-boundary flag."""
+        from vulca.cli import main
+        from vulca.types import CreateResult
+
+        with patch("vulca.create", return_value=CreateResult(session_id="s1")) as mock_create:
+            main([
+                "create",
+                "Socialist Realism propaganda poster with workers.",
+                "--output-is-artwork-itself",
+                "--provider",
+                "mock",
+                "--json",
+            ])
+
+        captured = capsys.readouterr()
+        assert '"session_id": "s1"' in captured.out
+        assert mock_create.call_args.kwargs["output_is_artwork_itself"] is True

@@ -423,6 +423,16 @@ def test_parse_llm_json_trailing_comma():
     assert result == {"a": 1, "b": 2}
 
 
+def test_parse_llm_json_repairs_extra_quote_before_key():
+    from vulca._parse import parse_llm_json
+
+    text = '{"L5": 0.75, ""missing_required_subjects": [], "risk_flags": []}'
+    result = parse_llm_json(text)
+
+    assert result["L5"] == 0.75
+    assert result["missing_required_subjects"] == []
+
+
 def test_parse_llm_json_invalid():
     from vulca._parse import parse_llm_json
 
