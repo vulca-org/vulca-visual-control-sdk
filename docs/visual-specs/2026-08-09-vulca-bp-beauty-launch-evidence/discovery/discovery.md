@@ -90,4 +90,3 @@ Ready for /visual-brainstorm. Suggested topic:
 
 ## Notes
 generated_by: visual-discovery
-
