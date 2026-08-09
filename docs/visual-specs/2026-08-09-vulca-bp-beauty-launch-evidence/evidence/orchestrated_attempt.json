@@ -1,0 +1,13 @@
+{
+  "run_type": "actual_vulca_orchestrated_decomposition_attempt",
+  "source_image": "../iters/1338/candidate_b.png",
+  "plan": "decomposition_plan.json",
+  "invocation": "PYTHONPATH=src python3 -> vulca.mcp_server.layers_split(mode=orchestrated)",
+  "input_dimensions": "1672x941",
+  "entity_count": 4,
+  "status": "error",
+  "reason": "pipeline error: FileNotFoundError: [Errno 2] No such file or directory: '/tmp/sam_vit_l.pth'",
+  "elapsed_sec": 4.04,
+  "claim_boundary": "The local orchestrated detector/SAM pipeline did not produce semantic masks. No automatic decomposition result is claimed.",
+  "fallback": "brief-guided human-confirmed target mask, materialized through VULCA layer primitives"
+}

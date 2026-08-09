@@ -1,0 +1,35 @@
+{
+  "record_type": "vulca_demo_revision_adoption",
+  "task": "Fictional lipstick launch master image for China and the United Kingdom",
+  "human_confirmed": false,
+  "decision_status": "assistant_selected_for_bp_demo",
+  "before": {
+    "path": "../iters/1338/candidate_b.png",
+    "sha256": "133926435df30bee9edb473f9c3fc4976335f522dce560d376a88c34aa1ddffc",
+    "decision": "reject",
+    "reason": "Three product units violated the frozen two-unit product-system constraint."
+  },
+  "instruction": "Remove only the redundant back-centre closed package; preserve the open lipstick, right package, geometry, palette, camera, paper folds, lighting, carmine arc, cobalt line, and left copy-safe area.",
+  "target": {
+    "manifest": "manual_layers/manifest.json",
+    "layer": "target_redundant_package",
+    "mask": "manual_layers/target_mask.png",
+    "selection_source": "brief-guided human confirmation",
+    "automatic_detection_claimed": false
+  },
+  "after": {
+    "path": "../iters/selected/hero_final.png",
+    "sha256": "951216214a9eabd9c2b5cb004c1a94dec871cf897e44c834f94cd7207616a7a7",
+    "decision": "adopt_for_demo",
+    "reason": "The redundant package is removed and the two-unit composition remains commercially legible."
+  },
+  "region_difference_diagnostic": {
+    "definition": "Percentage of pixels whose mean absolute RGB difference exceeds 12 on a 0-255 scale; diagnostic only, not a formal quality metric.",
+    "target_region_changed_pct": 74.72,
+    "protected_product_changed_pct": 6.10,
+    "environment_changed_pct": 1.11,
+    "interpretation": "The correction is concentrated in the selected target region; small residual changes remain in protected product pixels."
+  },
+  "rendering_backend": "GPT Image 2 through Codex image generation",
+  "claim_boundary": "Fictional VULCA demonstration; no customer outcome or human-confirmed acceptance is claimed."
+}

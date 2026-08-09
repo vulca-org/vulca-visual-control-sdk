@@ -1,0 +1,36 @@
+{
+  "plan_version": 1,
+  "slug": "beauty_candidate_b",
+  "domain": "photograph",
+  "device": "mps",
+  "expand_face_parts": false,
+  "soften_edges": true,
+  "unclaimed_threshold_pct": 2.0,
+  "entities": [
+    {
+      "name": "open_lipstick",
+      "label": "open red lipstick cosmetic tube",
+      "semantic_path": "subject.open_lipstick",
+      "detector": "auto"
+    },
+    {
+      "name": "redundant_package",
+      "label": "closed beige lipstick package in the back center",
+      "semantic_path": "subject.redundant_package",
+      "detector": "auto"
+    },
+    {
+      "name": "adopted_package",
+      "label": "closed beige lipstick package on the right",
+      "semantic_path": "subject.adopted_package",
+      "detector": "auto"
+    },
+    {
+      "name": "background",
+      "label": "warm ivory folded paper studio background",
+      "semantic_path": "background",
+      "detector": "dino",
+      "threshold": 0.2
+    }
+  ]
+}

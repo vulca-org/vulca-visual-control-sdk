@@ -1,0 +1,29 @@
+{
+  "evidence_type": "local_vulca_demo_run",
+  "vulca_version": "0.23.1",
+  "repo_baseline": "f253c22b2bd9ef3545d2720a52e172f217292f09",
+  "valid_source_invocation": "PYTHONPATH=src python3 -m vulca.cli",
+  "brief_session_id": "11a17564",
+  "brief_artifact": "../brief.yaml",
+  "source_image": "../iters/1338/candidate_b.png",
+  "selected_image": "../iters/selected/hero_final.png",
+  "automatic_decomposition": {
+    "attempted": true,
+    "status": "error",
+    "record": "orchestrated_attempt.json",
+    "reason": "SAM checkpoint /tmp/sam_vit_l.pth was unavailable"
+  },
+  "materialized_layer_package": {
+    "status": "ok_with_boundary",
+    "manifest": "manual_layers/manifest.json",
+    "split_mode": "brief_guided_manual_mask",
+    "target_selection": "human-confirmed from the brief, not detector output",
+    "layers": [
+      "environment",
+      "protected_product",
+      "target_redundant_package"
+    ]
+  },
+  "rendering_backend": "GPT Image 2 through Codex image generation",
+  "claim_boundary": "This is a fictional, brand-neutral VULCA demonstration. It is not a customer case, commercial result, or proof of automatic segmentation."
+}
