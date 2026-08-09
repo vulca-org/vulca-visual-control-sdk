@@ -1,0 +1,151 @@
+{
+  "schema_version": "0.1",
+  "slug": "2026-08-09-vulca-bp-beauty-launch-evidence",
+  "cards": [
+    {
+      "id": "vulca-bp-beauty-1-product-proof-first",
+      "label": "Product proof first",
+      "summary": "An austere enterprise-product route led by actual VULCA screens, semantic layers, masks, version records, and adoption states, with almost no campaign spectacle.",
+      "culture_terms": [
+        "enterprise information design",
+        "workflow transparency",
+        "controlled editing"
+      ],
+      "visual_ops": {
+        "composition": "large evidence panels in a strict left-to-right sequence, with one real screenshot or artifact per state",
+        "color": "warm white and ink black with VULCA cobalt as the sole accent",
+        "texture": "flat UI surfaces, crisp masks, and minimal material photography",
+        "lighting": "neutral and functional",
+        "camera": "orthographic product and interface views with no dramatic crop",
+        "typography": "large Chinese labels and very limited technical metadata",
+        "symbol_strategy": "version state, protected region, selected layer, and adopted output are the only symbols",
+        "avoid": [
+          "mock UI presented as live product",
+          "dense engineering panels",
+          "scores without business meaning",
+          "decorative AI imagery"
+        ]
+      },
+      "provider_hint": {
+        "sketch": {
+          "provider": "mock",
+          "model": "layout-record-only"
+        },
+        "final": {
+          "provider": "openai",
+          "model": "gpt-image-2"
+        },
+        "local": {
+          "provider": "comfyui"
+        }
+      },
+      "evaluation_focus": {
+        "L1": "the workflow reads instantly at presentation distance",
+        "L2": "screens and masks are genuine, sharp, and internally consistent",
+        "L3": "localization decisions are grounded rather than decorative",
+        "L4": "the visual proves a real enterprise control task",
+        "L5": "the work communicates persistent enterprise capability above replaceable models"
+      },
+      "risk": "High credibility but insufficient first-glance desire; the company may look like an internal workflow or governance tool.",
+      "status": "not_selected"
+    },
+    {
+      "id": "vulca-bp-beauty-2-campaign-spectacle-first",
+      "label": "Campaign spectacle first",
+      "summary": "A high-fashion editorial beauty route dominated by a cinematic lipstick hero and cross-channel campaign derivatives generated with GPT Image 2.",
+      "culture_terms": [
+        "international editorial beauty",
+        "contemporary Chinese premium branding",
+        "controlled elegance"
+      ],
+      "visual_ops": {
+        "composition": "one dramatic lipstick or product-and-hand hero with generous copy space and secondary channel crops",
+        "color": "warm ivory, deep black, rich carmine, and subtle metallic highlights",
+        "texture": "matte lacquer, satin paper, cosmetic pigment, and clean studio reflections",
+        "lighting": "directional luxury studio lighting with soft falloff",
+        "camera": "premium macro product photography with one stable hero angle",
+        "typography": "no generated text; all deck text is overlaid later",
+        "symbol_strategy": "material, color, and composition carry the brand story; no explicit workflow symbols",
+        "avoid": [
+          "copying a known beauty campaign",
+          "fake brand marks",
+          "over-retouched skin",
+          "generic red-and-gold cultural shorthand"
+        ]
+      },
+      "provider_hint": {
+        "sketch": {
+          "provider": "gemini",
+          "model": "gemini-3.1-flash-image-preview"
+        },
+        "final": {
+          "provider": "openai",
+          "model": "gpt-image-2"
+        },
+        "local": {
+          "provider": "comfyui"
+        }
+      },
+      "evaluation_focus": {
+        "L1": "the hero is immediately legible and commercially polished",
+        "L2": "materials, reflections, and product geometry are believable",
+        "L3": "the campaign avoids tokenized cultural symbolism",
+        "L4": "the image supports a credible cross-market launch story",
+        "L5": "the campaign has a distinct visual thesis beyond luxury styling"
+      },
+      "risk": "Maximum visual appeal but weak product differentiation; viewers may conclude that VULCA is simply another image generator.",
+      "status": "not_selected"
+    },
+    {
+      "id": "vulca-bp-beauty-3-dual-evidence-system",
+      "label": "Dual evidence system",
+      "summary": "One premium, brand-neutral beauty campaign world supplies the emotional hook, while actual VULCA artifacts from the same task prove semantic control, constrained revision, review, provenance, and adoption continuity across model changes.",
+      "culture_terms": [
+        "contemporary Chinese beauty branding",
+        "international editorial product photography",
+        "cross-market localization",
+        "enterprise workflow transparency",
+        "controlled elegance"
+      ],
+      "visual_ops": {
+        "composition": "a dominant campaign hero for attraction, followed by large before-layer-target-after evidence states derived from the same source visual",
+        "color": "warm ivory and ink black foundation, VULCA cobalt for control evidence, one lipstick-carmine accent for the campaign",
+        "texture": "premium matte cosmetic materials and soft studio light in the hero; crisp masks, layer boundaries, and version states in evidence views",
+        "lighting": "editorial studio lighting for campaign pixels and neutral inspection lighting for evidence artifacts",
+        "camera": "one stable product angle maintained across versions so non-target preservation is visible",
+        "typography": "no generated campaign copy; deck-level Chinese headlines and short evidence labels are added after generation",
+        "symbol_strategy": "the same product identity persisting through model-rendered variants is the central symbol; masks and adopted-state markers make the control layer visible",
+        "avoid": [
+          "real brand logos or implied customer endorsement",
+          "mock VULCA screens presented as actual runs",
+          "unrelated cultural demo imagery",
+          "tiny multi-panel screenshots",
+          "AI robots and neon technology clichés",
+          "unverified performance metrics"
+        ]
+      },
+      "provider_hint": {
+        "sketch": {
+          "provider": "gemini",
+          "model": "gemini-3.1-flash-image-preview"
+        },
+        "final": {
+          "provider": "openai",
+          "model": "gpt-image-2"
+        },
+        "local": {
+          "provider": "comfyui"
+        }
+      },
+      "evaluation_focus": {
+        "L1": "campaign and proof layers remain readable at normal presentation distance",
+        "L2": "product geometry, material fidelity, masks, and non-target preservation are technically credible",
+        "L3": "China-to-UK localization is specific and respectful without national-symbol shorthand",
+        "L4": "the viewer understands the enterprise job, VULCA's role, and the replaceable rendering-model boundary",
+        "L5": "the visual system expresses enterprise memory and control as the durable value, not image novelty"
+      },
+      "risk": "If the actual VULCA run is weak or visually too small, the concept hero will overpower the proof and recreate the image-generator interpretation.",
+      "status": "selected"
+    }
+  ]
+}

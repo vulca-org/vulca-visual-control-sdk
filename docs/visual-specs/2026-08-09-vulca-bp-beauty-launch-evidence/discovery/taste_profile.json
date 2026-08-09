@@ -1,0 +1,111 @@
+{
+  "schema_version": "0.1",
+  "slug": "2026-08-09-vulca-bp-beauty-launch-evidence",
+  "source": {
+    "initial_intent": "Create a commercially compelling concept hero and an actual VULCA product-evidence sequence for the BP from one source-safe beauty launch task.",
+    "reference_paths": [
+      "docs/bp/2026-08-09-vulca-enterprise-ai-production-line/VULCA-企业视觉智能公司-BP-v6.pptx",
+      "assets/demo/v2/studio-output.jpg",
+      "assets/demo/v2/layers-extract"
+    ],
+    "conversation_signals": [
+      "selected direction 3: dual evidence system",
+      "images must support the commercial story rather than decorate it",
+      "enterprise scenario and investor readability come first",
+      "use a concrete beauty-launch example",
+      "do not claim an unverified beauty customer case",
+      "actual VULCA evidence and GPT Image 2 concept imagery must have separate roles"
+    ]
+  },
+  "domain": {
+    "primary": "commercial beauty campaign evidence visual",
+    "candidates": [
+      "editorial product photography",
+      "enterprise workflow evidence board",
+      "cross-market launch key visual"
+    ],
+    "confidence": "high"
+  },
+  "culture": {
+    "primary_tradition": "brand_design",
+    "candidate_traditions": [
+      "contemporary Chinese beauty branding",
+      "international editorial product photography",
+      "enterprise information design"
+    ],
+    "terms": [
+      "controlled elegance",
+      "cross-market localization",
+      "material authenticity",
+      "cultural specificity without token symbols",
+      "workflow transparency"
+    ],
+    "avoid_cliches": [
+      "dragons, lanterns, porcelain patterns, or red-and-gold decoration used as generic Chinese shorthand",
+      "Union Jack or London landmarks used as generic British shorthand",
+      "humanoid robots, glowing brains, neon circuitry, or floating AI dashboards",
+      "fake luxury logos or close imitation of a known beauty brand",
+      "generated text inside campaign pixels"
+    ],
+    "risk_flags": [
+      "beauty is a demonstration market, not a confirmed customer case",
+      "concept imagery can be mistaken for product proof unless labelled",
+      "tiny workflow screenshots will recreate the current deck weakness",
+      "culture cues can become decorative stereotypes instead of business-relevant localization"
+    ]
+  },
+  "aesthetic": {
+    "mood": [
+      "premium",
+      "controlled",
+      "credible",
+      "optimistic",
+      "technically calm"
+    ],
+    "composition": [
+      "16:9 landscape master",
+      "one dominant product subject",
+      "clear negative space for deck typography",
+      "large before-layer-after evidence views",
+      "single reading path from enterprise input to adopted result"
+    ],
+    "color": [
+      "warm ivory base",
+      "ink black type and structure",
+      "VULCA cobalt blue for workflow and control",
+      "one lipstick-carmine campaign accent",
+      "no rainbow AI gradients"
+    ],
+    "material": [
+      "matte lacquered cosmetic packaging",
+      "controlled satin or paper texture",
+      "soft studio reflections",
+      "crisp masks and layer boundaries only in evidence views"
+    ],
+    "typography": [
+      "deck typography added outside generated pixels",
+      "large Chinese headlines",
+      "short bilingual technical labels only where necessary",
+      "no unreadable miniature UI copy"
+    ],
+    "symbol_strategy": "Use visual state changes, masks, protected regions, version chips, and adoption states as evidence symbols; avoid decorative AI iconography."
+  },
+  "commercial_context": {
+    "audience": "enterprise buyers, industrial partners, and early-stage investors at an AI Agent event",
+    "channel": "six-slide 16:9 business-plan presentation and exported PDF",
+    "conversion_pressure": "high",
+    "brand_maturity": "early company with runnable product foundations but unvalidated commercial beauty traction"
+  },
+  "selection_history": [
+    {
+      "selection": "vulca-bp-beauty-3-dual-evidence-system",
+      "signal": "User explicitly selected direction 3.",
+      "status": "selected"
+    }
+  ],
+  "confidence": {
+    "overall": "high",
+    "needs_more_questions": false
+  }
+}
+
