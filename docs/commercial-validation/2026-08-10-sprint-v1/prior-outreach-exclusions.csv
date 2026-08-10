@@ -1,0 +1,31 @@
+company,route_used,date_sent,delivery_status,reply_status,current_handling,source
+Summer Fridays,influencers@summerfridays.com,2026-06-23,delivered_unconfirmed,auto_ack,exclude_current_sprint,lane_a
+ILIA Beauty,partnerships@iliabeauty.com,2026-06-23,delivered_unconfirmed,no_reply,exclude_current_sprint,lane_a
+ONE/SIZE,press@onesizebeauty.com,2026-06-23,delivered_unconfirmed,no_reply,exclude_current_sprint,lane_a
+Shoot It Productions,jasonstafford@shootitproductions.com,2026-06-23,delivered_unconfirmed,no_reply,exclude_current_sprint,lane_a
+e.l.f. Beauty,corpcomms@elfbeauty.com,2026-06-27,delivered_unconfirmed,no_reply,exclude_current_sprint,lane_a
+SharkNinja / Shark Beauty,PR@sharkninja.com,2026-06-27,delivered_unconfirmed,no_reply,exclude_current_sprint,lane_a
+Tower 28 Beauty,partnerships@tower28beauty.com,2026-06-27,delivered_unconfirmed,auto_ack,exclude_current_sprint,lane_a
+OUAI,press@theouai.com,2026-06-27,delivered_unconfirmed,no_reply,exclude_current_sprint,lane_a
+Supergoop!,press@supergoop.com,2026-06-27,delivered_unconfirmed,no_reply,exclude_current_sprint,lane_a
+Drunk Elephant,press@drunkelephant.com,2026-06-27,delivered_unconfirmed,no_reply,exclude_current_sprint,lane_a
+Glow Recipe,press@glowrecipe.com,2026-06-27,delivered_unconfirmed,no_reply,exclude_current_sprint,lane_a
+Pattern Beauty,pr@patternbeauty.com,2026-06-27,delivered_unconfirmed,no_reply,exclude_current_sprint,lane_a
+Bubble Skincare,press@hellobubble.com,2026-06-27,delivered_unconfirmed,no_reply,exclude_current_sprint,lane_a
+Starface,press@starfaceworld.com,2026-06-27,delivered_unconfirmed,no_reply,exclude_current_sprint,lane_a
+Sephora,externalcomms@sephora.com,2026-06-27,delivered_unconfirmed,no_reply,exclude_current_sprint,lane_a
+The Social Savannah,info@savannahsanchez.me,2026-06-29,bounced,no_reply,do_not_retry_same_route,lane_c
+The UGC Agency,brands@theugc.agency,2026-06-29,bounced,no_reply,do_not_retry_same_route,lane_c
+UGC Factory,contact@ugcfactory.io,2026-06-29,bounced,no_reply,do_not_retry_same_route,lane_c
+inBeat,hello@inbeat.agency,2026-06-29,delivered_unconfirmed,no_reply,exclude_current_sprint,lane_c
+Growthcurve,hello@growthcurve.co,2026-06-29,delivered_unconfirmed,no_reply,exclude_current_sprint,lane_c
+AdQuadrant,sales@adquadrant.com,2026-06-29,bounced,no_reply,do_not_retry_same_route,lane_c
+Sway Group,info@swaygroup.com,2026-06-29,delivered_unconfirmed,no_reply,exclude_current_sprint,lane_c
+House of Marketers,newbusiness@houseofmarketers.com,2026-06-29,delivered_unconfirmed,no_reply,exclude_current_sprint,lane_c
+Obvious.ly,contact@obvious.ly,2026-06-29,delivered_unconfirmed,no_reply,exclude_current_sprint,lane_c
+Socially Powerful,tellmemore@sociallypowerful.com,2026-06-29,delivered_unconfirmed,no_reply,exclude_current_sprint,lane_c
+UGC Shop,hi@ugc.shop,2026-06-29,bounced,no_reply,do_not_retry_same_route,lane_c
+Insense,hello@insense.pro,2026-06-29,delivered_unconfirmed,no_reply,exclude_current_sprint,lane_c
+Whalar,newbusiness@whalar.com,2026-06-29,delivered_unconfirmed,no_reply,exclude_current_sprint,lane_c
+Airpost,hello@airpost.ai,2026-06-29,delivered_unconfirmed,no_reply,exclude_current_sprint,lane_c
+TrueGroup,hello@truegroup.agency,2026-06-29,delivered_unconfirmed,no_reply,exclude_current_sprint,lane_c
