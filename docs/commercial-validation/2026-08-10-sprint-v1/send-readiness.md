@@ -1,39 +1,47 @@
 # Send Readiness
 
-Overall status: `BLOCKED_BEFORE_EXTERNAL_SEND`
+Overall status: `ACTIVE_LIMITED_UK_CORPORATE_PILOT`
 
-Preparation may continue. No first-touch, follow-up, form submission, LinkedIn
-message, calendar booking, or test email is authorised by this document.
+Updated: 2026-08-11
+
+The sender-domain gate has passed and a six-company UK corporate-email pilot
+has been sent. The active scope is limited to the public team or new-business
+routes recorded in `outreach-tracker.csv`. Named-person cold outreach, non-UK
+routes, official forms, LinkedIn messages, calendar bookings, and any second
+cohort remain blocked until their separate route and jurisdiction checks pass.
 
 ## 1. Sender-Domain Gate
 
-Read-only DNS observation on 2026-08-10:
+Status: `PASSED_2026-08-11`
 
-- MX records point to Namecheap forwarding hosts
-  (`eforward1`–`eforward5.registrar-servers.com`).
-- the root SPF record is `v=spf1 include:spf.efwd.registrar-servers.com ~all`;
-- no DMARC TXT record was returned for `_dmarc.vulcaart.art`;
-- outbound DKIM and an authorised SMTP/send-as path were not verified;
-- the previous commercial campaign was sent from `yuhaorui48@gmail.com`, and a
-  read-only Gmail search found no sent messages from `founder@vulcaart.art`.
-
-Interpretation: inbound forwarding may be configured, but the evidence does
-not establish that `founder@vulcaart.art` can send authenticated mail or receive
-and preserve replies correctly. Do not use the founder address for outreach
-until an end-to-end test passes.
+- Namecheap Private Email Launch trial is active for
+  `founder@vulcaart.art`; auto-renew is off.
+- MX points to `mx1.privateemail.com` and `mx2.privateemail.com`.
+- SPF authorises `spf.privateemail.com`.
+- DKIM is published for the VULCA domain.
+- DMARC is published with monitoring policy `p=none`, strict SPF/DKIM
+  alignment, and aggregate reports to the founder mailbox.
+- an external Mail-Tester check scored 8.9/10 and reported SPF, DKIM, and DMARC
+  passes: <https://www.mail-tester.com/test-ms84shwp4>.
+- the same test raised a SpamCop rule against one Namecheap shared relay IP.
+  This is a provider-reputation warning, not evidence that VULCA's domain
+  authentication failed.
+- external inbound delivery to the founder mailbox and forwarding to the owned
+  Gmail inbox were verified.
+- Gmail Send As uses Namecheap SMTP, and the default compose identity is
+  `Haorui | VULCA <founder@vulcaart.art>`.
 
 Required evidence:
 
-- [ ] choose and document the outbound mail provider;
-- [ ] publish provider-authorised SPF without breaking forwarding;
-- [ ] publish and verify DKIM;
-- [ ] publish a DMARC policy and reporting address;
-- [ ] send one authorised test to an owned external inbox;
-- [ ] inspect `From`, `Return-Path`, SPF, DKIM, and DMARC results;
-- [ ] reply from the external inbox and confirm the founder mailbox receives
-      the response;
-- [ ] confirm Gmail or the selected client sends replies from the intended
-      identity.
+- [x] choose and document the outbound mail provider;
+- [x] publish provider-authorised SPF;
+- [x] publish and verify DKIM;
+- [x] publish a DMARC policy and reporting address;
+- [x] send an authorised external authentication test;
+- [x] inspect SPF, DKIM, and DMARC results;
+- [x] confirm external inbound mail reaches the founder mailbox and forwarding
+      inbox;
+- [x] confirm Gmail composes and sends from the intended founder identity.
 
 ## 2. Prospect Gate
 
@@ -62,43 +70,65 @@ Required evidence:
 
 ## 4. Batch Gate
 
-- [ ] first cohort limited to 10 named people;
-- [ ] every draft reviewed together before sending;
-- [ ] explicit user approval records which drafts and routes may be used;
-- [ ] tracker is updated immediately after each send;
+- [x] first live cohort limited to six UK corporate team routes;
+- [x] every live draft and route reviewed before sending;
+- [x] explicit user approval records the required founder identity and send
+      authority;
+- [x] tracker updated after each send;
 - [ ] stop the cohort on any unexpected bounce cluster or sender warning;
 - [ ] do not start cohort two until cohort one has been reviewed.
 
 ## 5. Direct-Marketing And Suppression Gate
 
-Status: `NOT_REVIEWED_FOR_SEND`
+Status: `LIMITED_UK_CORPORATE_ROUTE_REVIEWED__OTHER_ROUTES_PENDING`
 
-The cohort spans more than one jurisdiction. A public business route does not
-by itself establish permission to send. The current UK ICO guidance also notes
+The full pool spans more than one jurisdiction. A public business route does
+not by itself establish permission to send. The current UK ICO guidance notes
 that corporate and individual subscribers are treated differently, that UK
 GDPR can still apply when a named business contact's personal data is used,
 and that the sender must identify itself and provide a valid opt-out route:
 <https://ico.org.uk/for-organisations/direct-marketing-and-privacy-and-electronic-communications/business-to-business-marketing/>.
 
-- [ ] identify the recipient legal entity and country before each send;
-- [ ] verify whether it is a corporate subscriber, sole trader, partnership,
-      or another protected recipient type;
-- [ ] document the applicable lawful basis and a proportionate legitimate-
-      interests assessment where relevant;
-- [ ] verify any country- or state-specific electronic-marketing requirement;
-- [ ] provide the required transparency/privacy information for named-contact
-      data sourced from public pages;
-- [ ] confirm that the public VULCA privacy notice used for outreach covers
-      prospecting data; the local ChatGPT App privacy policy is not enough;
-- [ ] include a valid opt-out method and honour it immediately;
-- [ ] maintain a suppression list and screen every new batch against it;
+The first live cohort was therefore narrowed to public corporate routes for
+six UK limited companies: Disrupt Marketing, Spin Brands, The Social Shepherd,
+Coolr, We Are Social, and Nonsensical (operated by Updates Media Limited). Each
+message used a company-team salutation, did not include a named employee or
+inferred personal address, identified VULCA and its founder address, and
+offered a reply-based opt-out. No attachment or tracking link was used.
+
+The current VULCA privacy notice does not yet cover proactive named-contact
+prospecting. Named-person outreach therefore remains blocked even when a role
+is publicly listed. US, Australian, EEA, German, Nordic, and form-based routes
+also remain pending jurisdiction-specific review.
+
+- [x] identify the six first-cohort legal entities and UK routes;
+- [x] limit the first cohort to corporate team or new-business subscribers;
+- [x] avoid named-contact personal data in the live messages;
+- [x] include a valid reply-based opt-out method;
+- [x] screen the first cohort against the prior-outreach exclusion list;
+- [ ] add proactive prospecting coverage before any named-person outreach;
+- [ ] complete country- or state-specific review before any non-UK send;
+- [ ] maintain and screen a durable opt-out suppression list before cohort two;
 - [ ] never promote an opted-out, bounced, or disputed route back into a batch.
 
 This checklist is an operational guardrail, not legal advice. External sending
-remains blocked until the user has reviewed the intended jurisdictions and the
-required records exist.
+outside the recorded six-company UK pilot remains blocked until the relevant
+jurisdiction and route records exist.
 
-## 6. Evidence And Pilot-Privacy Gate
+## 6. Provider-Limit Gate
+
+Status: `PILOT_ONLY`
+
+- Namecheap's current Private Email trial limit is 20 messages per mailbox per
+  hour: <https://www.namecheap.com/support/knowledgebase/article.aspx/10811/2306/new-email-sending-and-usage-limits-for-private-email/>.
+- Namecheap's restrictions prohibit spam and require double opt-in for mass
+  mailings: <https://www.namecheap.com/support/knowledgebase/article.aspx/133/22/do-you-have-any-restrictions-on-sending-out-emails/>.
+- six individually reviewed company messages were sent in the first hour;
+- a 90-recipient blast is not permitted on the current trial and is outside the
+  approved one-to-one pilot path;
+- stop on a provider warning, unexpected bounce cluster, or opt-out complaint.
+
+## 7. Evidence And Pilot-Privacy Gate
 
 - [ ] demo/sample is visibly marked fictional or public-case;
 - [ ] customer/design-partner status is not inferred from a reply;

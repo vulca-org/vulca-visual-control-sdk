@@ -1,8 +1,8 @@
 # VULCA Commercial Validation Sprint v1
 
-Status: `90_ACCOUNT_RESEARCH_UNIVERSE_COMPLETE__SEND_BLOCKED`
+Status: `UK_CORPORATE_PILOT_SENT__COHORT_2_BLOCKED`
 
-External-send authority: `NOT_GRANTED`
+External-send authority: `LIMITED_TO_RECORDED_6_COMPANY_PILOT`
 
 Created: 2026-08-10
 
@@ -12,11 +12,15 @@ Created: 2026-08-10
 - 90 new companies are ranked in the source-backed research universe: 30
   design-partner targets, 30 adjacent enterprise targets, and 30 strategic-
   learning accounts;
-- 10 named-person drafts from the original 30-account pass remain in the
-  tracker as a legacy drafting set, not the automatically approved A1 cohort;
-- 0 messages or forms have been sent or submitted;
-- outbound domain authentication, direct-marketing review, and explicit user
-  approval remain hard gates.
+- 10 named-person drafts from the original 30-account pass remain a legacy
+  drafting set, not automatic send authority;
+- six individually reviewed UK corporate team/new-business emails were sent
+  on 2026-08-11 from `founder@vulcaart.art`;
+- all six appear in Gmail `SENT`, with no immediate bounce and no attachment;
+- SPF, DKIM, DMARC, outbound SMTP, inbound mailbox, and forwarding have been
+  verified; inbox placement remains unconfirmed;
+- cohort two, named-person outreach, non-UK sends, and form submissions remain
+  blocked pending review.
 
 ## Objective
 
@@ -59,12 +63,14 @@ interaction exposes a specific blocking problem.
 7. `outreach-tracker.csv` — operational evidence fields for send, delivery,
    reply, discovery, and pilot status.
 8. `send-readiness.md` — domain, route, message, evidence, and authority gates.
+9. `first-live-cohort-2026-08-11.md` — exact first-cohort recipients, subjects,
+   messages, timestamps, and immediate post-send evidence state.
 
 ## Decision Gates
 
-- Activate only ten Portfolio A accounts at a time. After 10 named-person
-  contacts: if there are no human replies, stop and
-  inspect route, role, trigger, and offer before expanding the batch.
+- Review the six-company UK corporate pilot before activating cohort two. If
+  there are no human replies after the planned follow-up window, inspect route,
+  trigger, offer, sender reputation, and inbox placement before expanding.
 - If all 30 Portfolio A accounts produce no qualified discovery conversation,
   reframe or kill the wedge rather than continuing through B and C by inertia.
 - After 5 discovery conversations: if fewer than 3 describe the same concrete
