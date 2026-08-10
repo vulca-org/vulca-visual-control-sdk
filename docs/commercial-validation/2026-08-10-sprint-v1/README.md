@@ -1,6 +1,6 @@
 # VULCA Commercial Validation Sprint v1
 
-Status: `LOCAL_PACKET_COMPLETE__SEND_BLOCKED`
+Status: `90_ACCOUNT_RESEARCH_UNIVERSE_COMPLETE__SEND_BLOCKED`
 
 External-send authority: `NOT_GRANTED`
 
@@ -9,8 +9,11 @@ Created: 2026-08-10
 ## Current Snapshot
 
 - 30 prior companies are excluded from this sprint;
-- 30 new companies are ranked in the source-backed prospect pool;
-- 10 named-person drafts are prepared and seeded into the tracker;
+- 90 new companies are ranked in the source-backed research universe: 30
+  design-partner targets, 30 adjacent enterprise targets, and 30 strategic-
+  learning accounts;
+- 10 named-person drafts from the original 30-account pass remain in the
+  tracker as a legacy drafting set, not the automatically approved A1 cohort;
 - 0 messages or forms have been sent or submitted;
 - outbound domain authentication, direct-marketing review, and explicit user
   approval remain hard gates.
@@ -44,19 +47,26 @@ interaction exposes a specific blocking problem.
    clearly marked as a fictional demonstration.
 3. `prior-outreach-exclusions.csv` — the 30 companies already contacted in
    June 2026 and the handling rule for each.
-4. `prospect-pool.csv` — a fresh, source-backed pool of 30 companies with named
-   contacts; no guessed email addresses. Roles and routes are a 2026-08-10
-   research snapshot and must be rechecked immediately before use.
-5. `first-wave-drafts.md` — ten personalized first-touch drafts plus one
-   follow-up pattern.
-6. `outreach-tracker.csv` — operational evidence fields for send, delivery,
+4. `prospecting-strategy.md` — the extraction funnel, 30/30/30 portfolio,
+   source hierarchy, activation sequence, and stop/kill rules.
+5. `prospect-pool.csv` — a source-backed 90-account research universe with
+   named contacts, current entity normalization, relationship type, official
+   routes, and no guessed email addresses. Roles and routes are a 2026-08-10
+   snapshot and must be rechecked immediately before use.
+6. `first-wave-drafts.md` — ten personalized first-touch drafts from the first
+   research pass plus one follow-up pattern; these are retained for comparison
+   and require reselection/review against the 90-account ranking.
+7. `outreach-tracker.csv` — operational evidence fields for send, delivery,
    reply, discovery, and pilot status.
-7. `send-readiness.md` — domain, route, message, evidence, and authority gates.
+8. `send-readiness.md` — domain, route, message, evidence, and authority gates.
 
 ## Decision Gates
 
-- After 10 named-person contacts: if there are no human replies, stop and
+- Activate only ten Portfolio A accounts at a time. After 10 named-person
+  contacts: if there are no human replies, stop and
   inspect route, role, trigger, and offer before expanding the batch.
+- If all 30 Portfolio A accounts produce no qualified discovery conversation,
+  reframe or kill the wedge rather than continuing through B and C by inertia.
 - After 5 discovery conversations: if fewer than 3 describe the same concrete
   workflow problem, reframe the ICP or wedge.
 - After 1–2 pilots: if the second batch does not reduce repeated explanation,

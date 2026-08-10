@@ -1,14 +1,17 @@
 # First-Wave Drafts
 
-Status: `READY_FOR_USER_REVIEW`
+Status: `LEGACY_DRAFT_SET__RESELECTION_REQUIRED`
 
 Send authority: `NOT_GRANTED`
 
 Prepared: 2026-08-10
 
-The first cohort is limited to ten named people. Every draft uses a current
-public role, one source-backed company trigger, and a public company route. No
-personal email address has been inferred. First touch carries no attachment.
+These ten drafts were prepared during the original 30-account pass. They are
+retained as a comparison and drafting set, but they are not automatically the
+current A1 cohort after the pool expanded to 90 accounts. Every role, route,
+relationship type, and trigger must be rechecked against `prospect-pool.csv`
+before a ten-account A1 set is selected. No personal email address was inferred,
+and no draft is authorised for sending.
 
 ## Message Contract
 
@@ -26,11 +29,12 @@ personal email address has been inferred. First touch carries no attachment.
 
 ## Cohort Rationale
 
-The order favours route quality and accountable ownership over company size.
-It mixes five smaller or mid-sized agencies with five scaled creative or
-creator businesses. Shuttlerock, Vidsy, and Billion Dollar Boy have meaningful
-product overlap; they remain useful hypothesis tests but must not receive
-confidential implementation details or private pilot material.
+The original order favoured route quality and accountable ownership over
+company size. The 90-account rerank now classifies Shuttlerock, Vidsy, and
+Billion Dollar Boy as Portfolio B competitor-learning accounts, while Brave
+Bison and Darkroom are outside the current top-ten A1 recommendation. Their
+drafts remain useful for message comparison, but they must not be activated as
+buyer outreach or receive confidential implementation details.
 
 ## 1. Disrupt Marketing — Jay Richards
 
