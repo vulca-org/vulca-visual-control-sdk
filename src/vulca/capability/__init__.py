@@ -20,6 +20,14 @@ from .types import (
     SideEffectState,
     sha256_bytes,
 )
+from .runtime import CapabilityRuntime, EnvironmentCapabilityRuntime
+from .builtin import (
+    EditImageCapability,
+    EvaluateImageCapability,
+    GenerateImageCapability,
+    builtin_registry,
+)
+from .static import AdaptStaticCapability, ComposeStaticCapability, ValidateStaticCapability
 
 __all__ = [
     "JsonScalar",
@@ -38,4 +46,13 @@ __all__ = [
     "DuplicateCapability",
     "CapabilityInvocationMismatch",
     "CapabilityRegistry",
+    "CapabilityRuntime",
+    "EnvironmentCapabilityRuntime",
+    "GenerateImageCapability",
+    "EditImageCapability",
+    "ComposeStaticCapability",
+    "AdaptStaticCapability",
+    "ValidateStaticCapability",
+    "EvaluateImageCapability",
+    "builtin_registry",
 ]
