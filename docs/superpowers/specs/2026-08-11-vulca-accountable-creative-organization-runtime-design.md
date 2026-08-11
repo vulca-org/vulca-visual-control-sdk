@@ -2,11 +2,13 @@
 
 **Date:** 2026-08-11
 
-**Status:** Product constitution and system design approved; competitive-completeness amendment incorporated; final written review and implementation plan pending
+**Status:** Product constitution and system design confirmed; competitive-completeness amendment incorporated; implementation plan package written; product implementation not started
 
 **Product path:** C → D is the implementation and trust-acquisition sequence, not a reduction of product scope: first make one end-to-end responsibility highly reliable, then compose several reliable responsibilities into an operating unit
 
 **Implementation authority:** This document authorises planning only. It does not claim that the target runtime, enterprise deployment, customer adoption, or role replacement already exists.
+
+**Confirmed implementation plan:** [VULCA Accountable Runtime Program](../plans/2026-08-11-vulca-runtime-program.md), with six dependency-ordered subsystem plans. Plan existence is not implementation evidence.
 
 ## 1. Executive decision
 
@@ -1303,7 +1305,7 @@ The following are intentionally not fixed by this product design:
 - the first Pilot customer, segment, price, and legal agreement;
 - cloud Control Plane technology and enterprise connector catalogue.
 
-These decisions must be made in the implementation plan using the actual current checkout, dependency graph, and targeted tests. No implementation begins until this specification receives final user review.
+These decisions must be made in the implementation plan using the actual current checkout, dependency graph, and targeted tests. Final product-specification review was confirmed on 2026-08-11; implementation remains a separate execution step governed by the linked plan package and its gates.
 
 ## 21. Design acceptance summary
 
