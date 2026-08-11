@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import MISSING, FrozenInstanceError, fields
-from typing import get_args, get_origin, get_type_hints
 
 import pytest
 
@@ -141,66 +140,67 @@ def test_contract_dataclasses_are_frozen() -> None:
             setattr(value, field, "changed")
 
 
-def test_dataclass_contract_preserves_field_order_annotations_and_defaults() -> None:
-    expected_fields = {
-        CapabilityManifest: (
-            "capability_id",
-            "version",
-            "kind",
-            "owner",
-            "maturity",
-            "input_schema",
-            "output_schema",
-            "authority_requirements",
-            "evaluator_bindings",
-            "retryable_codes",
-            "deterministic",
-            "deprecated",
+def test_dataclass_contract_preserves_exact_annotations_defaults_and_field_order() -> None:
+    expected_contracts = (
+        (
+            CapabilityManifest,
+            (
+                ("capability_id", "str", MISSING, MISSING),
+                ("version", "str", MISSING, MISSING),
+                ("kind", "str", MISSING, MISSING),
+                ("owner", "str", MISSING, MISSING),
+                ("maturity", "CapabilityMaturity", MISSING, MISSING),
+                ("input_schema", "dict[str, JsonValue]", MISSING, MISSING),
+                ("output_schema", "dict[str, JsonValue]", MISSING, MISSING),
+                ("authority_requirements", "tuple[str, ...]", MISSING, MISSING),
+                ("evaluator_bindings", "tuple[str, ...]", MISSING, MISSING),
+                ("retryable_codes", "tuple[str, ...]", MISSING, MISSING),
+                ("deterministic", "bool", MISSING, MISSING),
+                ("deprecated", "bool", False, MISSING),
+            ),
         ),
-        CapabilityInvocation: (
-            "invocation_id",
-            "capability_id",
-            "capability_version",
-            "inputs",
-            "options",
+        (
+            CapabilityInvocation,
+            (
+                ("invocation_id", "str", MISSING, MISSING),
+                ("capability_id", "str", MISSING, MISSING),
+                ("capability_version", "str", MISSING, MISSING),
+                ("inputs", "dict[str, JsonValue]", MISSING, MISSING),
+                ("options", "dict[str, JsonValue]", MISSING, dict),
+            ),
         ),
-        CapabilityArtifact: ("logical_name", "media_type", "content", "sha256"),
-        CapabilityResult: (
-            "invocation_id",
-            "status",
-            "side_effect_state",
-            "output",
-            "artifacts",
-            "provider_receipt",
-            "latency_ms",
-            "cost_minor",
-            "currency",
-            "error_code",
+        (
+            CapabilityArtifact,
+            (
+                ("logical_name", "str", MISSING, MISSING),
+                ("media_type", "str", MISSING, MISSING),
+                ("content", "bytes", MISSING, MISSING),
+                ("sha256", "str", MISSING, MISSING),
+            ),
         ),
-    }
+        (
+            CapabilityResult,
+            (
+                ("invocation_id", "str", MISSING, MISSING),
+                ("status", "CapabilityStatus", MISSING, MISSING),
+                ("side_effect_state", "SideEffectState", MISSING, MISSING),
+                ("output", "dict[str, JsonValue]", MISSING, MISSING),
+                ("artifacts", "tuple[CapabilityArtifact, ...]", MISSING, MISSING),
+                ("provider_receipt", "dict[str, JsonValue]", MISSING, MISSING),
+                ("latency_ms", "int", MISSING, MISSING),
+                ("cost_minor", "int", MISSING, MISSING),
+                ("currency", "str", MISSING, MISSING),
+                ("error_code", "str | None", None, MISSING),
+            ),
+        ),
+    )
 
-    for contract, names in expected_fields.items():
-        assert tuple(field.name for field in fields(contract)) == names
-        assert tuple(contract.__annotations__) == names
-
-    manifest_hints = get_type_hints(CapabilityManifest)
-    assert manifest_hints["capability_id"] is str
-    assert manifest_hints["maturity"] is CapabilityMaturity
-    assert manifest_hints["deprecated"] is bool
-
-    invocation_hints = get_type_hints(CapabilityInvocation)
-    assert get_origin(invocation_hints["options"]) is dict
-    assert get_args(invocation_hints["options"])[0] is str
-
-    manifest_fields = {field.name: field for field in fields(CapabilityManifest)}
-    invocation_fields = {field.name: field for field in fields(CapabilityInvocation)}
-    result_fields = {field.name: field for field in fields(CapabilityResult)}
-    assert manifest_fields["deprecated"].default is False
-    assert manifest_fields["deprecated"].default_factory is MISSING
-    assert invocation_fields["options"].default is MISSING
-    assert invocation_fields["options"].default_factory is dict
-    assert result_fields["error_code"].default is None
-    assert result_fields["error_code"].default_factory is MISSING
+    for contract, expected_fields in expected_contracts:
+        actual_fields = tuple(
+            (field.name, field.type, field.default, field.default_factory)
+            for field in fields(contract)
+        )
+        assert actual_fields == expected_fields
 
 
 def test_registry_requires_exact_version() -> None:
