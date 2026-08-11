@@ -9,7 +9,7 @@ successfully.
   2. Generation:   generate_image, create_artwork, generate_concepts, inpaint_artwork
   3. Evaluation:   evaluate_artwork, view_image
   4. Layer editing: layers_split, layers_list, layers_edit, layers_transform,
-                    layers_redraw, layers_composite, layers_export, layers_evaluate
+                    layers_redraw, layers_composite, layers_export, layers_import_openraster, layers_evaluate
   5. Session:      archive_session, sync_data, unload_models
 
 Typical agent loop: brief_parse → get_tradition_guide → generate_image → view_image
@@ -56,6 +56,7 @@ _TOOL_TIERS: dict[str, str] = {
     "layers_edit": "advanced", "layers_redraw": "advanced",
     "layers_evaluate": "advanced",
     "layers_export": "advanced",
+    "layers_import_openraster": "advanced",
     "layers_transform": "advanced",
     "generate_image": "core",
     "view_image": "core",
@@ -1459,15 +1460,15 @@ async def layers_export(
     export_format: str = "png",
     output_path: str = "",
 ) -> dict:
-    """Export the artwork as a PNG composite or PSD file — for delivery or external editing.
+    """Export artwork as PNG, a legacy PSD directory, or an OpenRaster archive.
 
     Use at the end of a workflow after layers_composite confirms the result looks correct.
-    PSD format preserves individual layers for editing in Photoshop or Affinity Photo.
+    ORA preserves flat full-canvas layers for editing in Krita and records round-trip hash evidence.
 
     Args:
         artwork_dir: Directory containing layer PNGs and manifest.json.
-        export_format: "png" (flat composite, default) or "psd" (layered Photoshop file).
-        output_path: Output path (default: <artwork_dir>/composite.png or layers.psd).
+        export_format: "png" (flat, default), "psd" (legacy PNG directory), or "ora" (OpenRaster).
+        output_path: Output path (default: composite.png, layers.psd, or layers.ora).
 
     Returns:
         export_path: Absolute path to the exported file.
@@ -1475,7 +1476,7 @@ async def layers_export(
     import json as json_mod
     from pathlib import Path
     from vulca.layers.edit import load_artwork
-    from vulca.layers.export import export_psd
+    from vulca.layers.export import export_openraster, export_psd
     from vulca.layers.composite import composite_layers
 
     artwork = load_artwork(artwork_dir)
@@ -1491,14 +1492,33 @@ async def layers_export(
         except Exception:
             pass
 
+    if export_format == "ora":
+        out = output_path or str(Path(artwork_dir) / "layers.ora")
+        return export_openraster(artwork_dir, out)
     if export_format == "psd":
         out = output_path or str(Path(artwork_dir) / "layers.psd")
         export_psd(artwork.layers, width=width, height=height, output_path=out)
-    else:
+    elif export_format == "png":
         out = output_path or str(Path(artwork_dir) / "composite.png")
         composite_layers(artwork.layers, width=width, height=height, output_path=out)
+    else:
+        return {"error": "export_format must be png, psd, or ora"}
 
     return {"export_path": out}
+
+
+@mcp.tool()
+async def layers_import_openraster(
+    archive_path: str,
+    output_dir: str,
+) -> dict:
+    """Import flat OpenRaster layers into a new VULCA artwork directory with hash evidence."""
+    from vulca.layers.export import import_openraster
+
+    try:
+        return import_openraster(archive_path, output_dir)
+    except Exception as exc:
+        return {"error": str(exc)}
 
 
 @mcp.tool()
