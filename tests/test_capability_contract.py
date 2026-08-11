@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError
+from dataclasses import MISSING, FrozenInstanceError, fields
+from typing import get_args, get_origin, get_type_hints
 
 import pytest
 
@@ -102,6 +103,21 @@ def test_fake_capability_conforms_to_protocol() -> None:
     assert capability.manifest.version == "1.0.0"
 
 
+def test_capability_enums_preserve_strenum_semantics() -> None:
+    members_and_values = (
+        (CapabilityMaturity.NATIVE, "NATIVE"),
+        (CapabilityStatus.SUCCEEDED, "SUCCEEDED"),
+        (SideEffectState.UNKNOWN, "UNKNOWN"),
+    )
+
+    for member, value in members_and_values:
+        assert isinstance(member, str)
+        assert member.value == value
+        assert member == value
+        assert str(member) == value
+        assert f"{member}" == value
+
+
 def test_artifact_rejects_wrong_hash() -> None:
     with pytest.raises(ValueError, match="sha256"):
         CapabilityArtifact("hero", "image/png", b"png", "0" * 64)
@@ -123,6 +139,68 @@ def test_contract_dataclasses_are_frozen() -> None:
     for value, field in values_and_fields:
         with pytest.raises(FrozenInstanceError):
             setattr(value, field, "changed")
+
+
+def test_dataclass_contract_preserves_field_order_annotations_and_defaults() -> None:
+    expected_fields = {
+        CapabilityManifest: (
+            "capability_id",
+            "version",
+            "kind",
+            "owner",
+            "maturity",
+            "input_schema",
+            "output_schema",
+            "authority_requirements",
+            "evaluator_bindings",
+            "retryable_codes",
+            "deterministic",
+            "deprecated",
+        ),
+        CapabilityInvocation: (
+            "invocation_id",
+            "capability_id",
+            "capability_version",
+            "inputs",
+            "options",
+        ),
+        CapabilityArtifact: ("logical_name", "media_type", "content", "sha256"),
+        CapabilityResult: (
+            "invocation_id",
+            "status",
+            "side_effect_state",
+            "output",
+            "artifacts",
+            "provider_receipt",
+            "latency_ms",
+            "cost_minor",
+            "currency",
+            "error_code",
+        ),
+    }
+
+    for contract, names in expected_fields.items():
+        assert tuple(field.name for field in fields(contract)) == names
+        assert tuple(contract.__annotations__) == names
+
+    manifest_hints = get_type_hints(CapabilityManifest)
+    assert manifest_hints["capability_id"] is str
+    assert manifest_hints["maturity"] is CapabilityMaturity
+    assert manifest_hints["deprecated"] is bool
+
+    invocation_hints = get_type_hints(CapabilityInvocation)
+    assert get_origin(invocation_hints["options"]) is dict
+    assert get_args(invocation_hints["options"])[0] is str
+
+    manifest_fields = {field.name: field for field in fields(CapabilityManifest)}
+    invocation_fields = {field.name: field for field in fields(CapabilityInvocation)}
+    result_fields = {field.name: field for field in fields(CapabilityResult)}
+    assert manifest_fields["deprecated"].default is False
+    assert manifest_fields["deprecated"].default_factory is MISSING
+    assert invocation_fields["options"].default is MISSING
+    assert invocation_fields["options"].default_factory is dict
+    assert result_fields["error_code"].default is None
+    assert result_fields["error_code"].default_factory is MISSING
 
 
 def test_registry_requires_exact_version() -> None:
@@ -200,14 +278,17 @@ def test_invocation_rejects_empty_identity_fields(field: str) -> None:
         "oauth_credential",
     ),
 )
-def test_invocation_rejects_nested_credentials(key: str) -> None:
+@pytest.mark.parametrize("location", ("inputs", "options"))
+def test_invocation_rejects_nested_credentials(key: str, location: str) -> None:
+    values = {"inputs": {}, "options": {}}
+    values[location] = {"provider": [{"nested": {key: "must-not-enter"}}]}
+
     with pytest.raises(ValueError, match="credential-bearing"):
         CapabilityInvocation(
             invocation_id="inv_test",
             capability_id="test.echo",
             capability_version="1.0.0",
-            inputs={},
-            options={"provider": [{"nested": {key: "must-not-enter"}}]},
+            **values,
         )
 
 
@@ -251,6 +332,21 @@ def test_result_allows_unknown_side_effect_state_only_for_failure() -> None:
     )
 
     assert result.side_effect_state is SideEffectState.UNKNOWN
+
+
+def test_result_rejects_unknown_status() -> None:
+    with pytest.raises(ValueError, match="status"):
+        _result(status="BOGUS")
+
+
+@pytest.mark.parametrize("error_code", ("", "   ", "\t\n"))
+def test_failed_result_rejects_blank_error_code(error_code: str) -> None:
+    with pytest.raises(ValueError, match="error_code"):
+        _result(
+            status=CapabilityStatus.FAILED,
+            side_effect_state=SideEffectState.NOT_STARTED,
+            error_code=error_code,
+        )
 
 
 @pytest.mark.asyncio

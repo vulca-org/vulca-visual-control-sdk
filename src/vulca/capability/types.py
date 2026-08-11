@@ -5,8 +5,21 @@ from __future__ import annotations
 import hashlib
 import hmac
 from dataclasses import dataclass, field
-from enum import StrEnum
+from enum import Enum
 from typing import Protocol, TypeAlias
+
+try:
+    # StrEnum was added to the standard library in Python 3.11.
+    from enum import StrEnum
+except ImportError:  # pragma: no cover - exercised by Python 3.10 runtime
+    class StrEnum(str, Enum):  # type: ignore[no-redef]  # intentional 3.10 fallback
+        """Python 3.10-compatible subset of the Python 3.11 StrEnum API."""
+
+        def __str__(self) -> str:
+            return str(self.value)
+
+        def __format__(self, format_spec: str) -> str:
+            return str.__format__(str(self.value), format_spec)
 
 
 JsonScalar: TypeAlias = str | int | float | bool | None
@@ -133,14 +146,17 @@ class CapabilityResult:
     error_code: str | None = None
 
     def __post_init__(self) -> None:
+        if self.status not in (CapabilityStatus.SUCCEEDED, CapabilityStatus.FAILED):
+            raise ValueError("status must be SUCCEEDED or FAILED")
+
         if self.status == CapabilityStatus.SUCCEEDED:
             if self.error_code is not None:
                 raise ValueError("SUCCEEDED results must not include error_code")
             if self.side_effect_state != SideEffectState.COMPLETED:
                 raise ValueError("SUCCEEDED results require side_effect_state COMPLETED")
         elif self.status == CapabilityStatus.FAILED:
-            if self.error_code is None:
-                raise ValueError("FAILED results require error_code")
+            if not isinstance(self.error_code, str) or not self.error_code.strip():
+                raise ValueError("FAILED results require a non-empty error_code")
             if self.side_effect_state not in (SideEffectState.NOT_STARTED, SideEffectState.UNKNOWN):
                 raise ValueError("FAILED results require side_effect_state NOT_STARTED or UNKNOWN")
 
