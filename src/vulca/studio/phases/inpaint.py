@@ -144,7 +144,10 @@ class InpaintPhase:
         try:
             ref_b64 = base64.b64encode(Path(crop_path).read_bytes()).decode()
         except OSError:
-            raise_sanitized_exception(CapabilityProviderTransportError())
+            # This is local input validation before any provider call. Preserve
+            # the established RuntimeError contract without echoing the path or
+            # the underlying OS error across the capability boundary.
+            raise RuntimeError("Cannot read crop reference") from None
 
         # Pass api_key only when the caller supplied one; otherwise let each
         # provider resolve its own env var (OPENAI_API_KEY, GOOGLE_API_KEY, …).
