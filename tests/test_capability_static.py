@@ -42,13 +42,27 @@ def _invocation(capability_id: str, inputs: dict, *, options: dict | None = None
     )
 
 
-def _font_fixture(tmp_path: Path) -> Path:
-    source = Path("/System/Library/Fonts/Supplemental/Arial.ttf")
-    if not source.exists():
-        pytest.skip("the test environment has no authorised system font fixture")
-    destination = tmp_path / "approved-font.ttf"
-    destination.write_bytes(source.read_bytes())
-    return destination
+def _mode_bytes(mode: str, size: tuple[int, int] = (80, 40)) -> bytes:
+    colors: dict[str, object] = {
+        "RGB": (21, 42, 63),
+        "RGBA": (21, 42, 63, 200),
+        "L": 96,
+        "P": 3,
+        "CMYK": (10, 20, 30, 40),
+        "I": 96,
+        "F": 0.5,
+        "1": 1,
+    }
+    buffer = BytesIO()
+    image = Image.new(mode, size, colors[mode])
+    image.save(buffer, format="PNG" if mode in {"RGB", "RGBA", "L", "P"} else "TIFF")
+    return buffer.getvalue()
+
+
+def _bmp_bytes(size: tuple[int, int] = (100, 60)) -> bytes:
+    buffer = BytesIO()
+    Image.new("RGB", size, (21, 42, 63)).save(buffer, format="BMP")
+    return buffer.getvalue()
 
 
 def test_compose_is_deterministic_and_stays_inside_declared_safe_overlay_zone(
@@ -57,18 +71,16 @@ def test_compose_is_deterministic_and_stays_inside_declared_safe_overlay_zone(
     background = tmp_path / "background.png"
     background_bytes = _png_bytes()
     background.write_bytes(background_bytes)
-    font = _font_fixture(tmp_path)
     inputs = {
         "background": str(background),
         "headline": "Campaign title",
         "body": "A restrained supporting line",
         "cta": "Learn more",
-        "font_path": str(font),
         "palette": {"text": "#ffffff", "accent": "#ffcc00"},
         "layout_template": "bottom_left",
         "safe_area": {"top": 0.10, "right": 0.10, "bottom": 0.10, "left": 0.10},
     }
-    options = {"authorized_paths": [str(background), str(font)]}
+    options = {"authorized_paths": [str(background)]}
 
     import asyncio
 
@@ -347,3 +359,164 @@ def test_validate_rejects_corrupt_input_as_not_started() -> None:
     assert result.status is CapabilityStatus.FAILED
     assert result.side_effect_state is SideEffectState.NOT_STARTED
     assert result.error_code == "CORRUPT_ARTIFACT"
+
+
+@pytest.mark.parametrize(
+    ("capability", "capability_id", "inputs_key"),
+    [
+        (ComposeStaticCapability, "vulca.image.compose_static", "background"),
+        (AdaptStaticCapability, "vulca.image.adapt_static", "master"),
+        (ValidateStaticCapability, "vulca.image.validate_static", "artifact"),
+    ],
+)
+def test_static_filesystem_inputs_require_explicit_path_authority(
+    tmp_path: Path,
+    capability: type[ComposeStaticCapability] | type[AdaptStaticCapability] | type[ValidateStaticCapability],
+    capability_id: str,
+    inputs_key: str,
+) -> None:
+    path = tmp_path / f"{inputs_key}.png"
+    path.write_bytes(_png_bytes())
+    inputs: dict = {inputs_key: str(path)}
+    if capability is ComposeStaticCapability:
+        inputs["headline"] = "Title"
+    elif capability is AdaptStaticCapability:
+        inputs.update(width=40, height=40, media_type="image/png", mode="CONTAIN")
+
+    import asyncio
+
+    result = asyncio.run(capability().invoke(_invocation(capability_id, inputs)))
+
+    assert result.status is CapabilityStatus.FAILED
+    assert result.side_effect_state is SideEffectState.NOT_STARTED
+    assert result.error_code == "UNAUTHORIZED_PATH"
+
+
+def test_static_missing_path_is_not_treated_as_base64(tmp_path: Path) -> None:
+    import asyncio
+
+    missing = tmp_path / "missing.png"
+    result = asyncio.run(
+        ComposeStaticCapability().invoke(
+            _invocation(
+                "vulca.image.compose_static",
+                {"background": str(missing), "headline": "Title"},
+            )
+        )
+    )
+
+    assert result.status is CapabilityStatus.FAILED
+    assert result.error_code == "MISSING_INPUT"
+
+
+def test_static_symlink_escape_is_rejected_before_read(tmp_path: Path) -> None:
+    approved = tmp_path / "approved"
+    approved.mkdir()
+    outside = tmp_path / "outside.png"
+    outside.write_bytes(_png_bytes())
+    link = approved / "linked.png"
+    link.symlink_to(outside)
+
+    import asyncio
+
+    result = asyncio.run(
+        AdaptStaticCapability().invoke(
+            _invocation(
+                "vulca.image.adapt_static",
+                {
+                    "master": str(link),
+                    "width": 40,
+                    "height": 40,
+                    "media_type": "image/png",
+                    "mode": "CONTAIN",
+                },
+                options={"authorized_roots": [str(approved)]},
+            )
+        )
+    )
+
+    assert result.status is CapabilityStatus.FAILED
+    assert result.error_code == "UNAUTHORIZED_PATH"
+
+
+@pytest.mark.parametrize("mode", ("RGB", "RGBA", "L", "P"))
+def test_compose_normalizes_supported_pillow_modes(mode: str) -> None:
+    import asyncio
+
+    result = asyncio.run(
+        ComposeStaticCapability().invoke(
+            _invocation(
+                "vulca.image.compose_static",
+                {"background": _raw_b64(_mode_bytes(mode)), "headline": "Title"},
+            )
+        )
+    )
+
+    assert result.status is CapabilityStatus.SUCCEEDED
+    with Image.open(BytesIO(result.artifacts[0].content)) as output:
+        assert output.size == (80, 40)
+        assert output.format == "PNG"
+
+
+@pytest.mark.parametrize("mode", ("RGB", "RGBA", "L", "P"))
+def test_adapt_normalizes_supported_pillow_modes(mode: str) -> None:
+    import asyncio
+
+    result = asyncio.run(
+        AdaptStaticCapability().invoke(
+            _invocation(
+                "vulca.image.adapt_static",
+                {
+                    "master": _raw_b64(_mode_bytes(mode)),
+                    "width": 40,
+                    "height": 30,
+                    "media_type": "image/png",
+                    "mode": "CONTAIN",
+                },
+            )
+        )
+    )
+
+    assert result.status is CapabilityStatus.SUCCEEDED
+    with Image.open(BytesIO(result.artifacts[0].content)) as output:
+        assert output.size == (40, 30)
+
+
+@pytest.mark.parametrize("mode", ("CMYK", "I", "F", "1"))
+def test_static_rejects_unsupported_pillow_modes_structurally(mode: str) -> None:
+    import asyncio
+
+    result = asyncio.run(
+        AdaptStaticCapability().invoke(
+            _invocation(
+                "vulca.image.adapt_static",
+                {
+                    "master": _raw_b64(_mode_bytes(mode)),
+                    "width": 40,
+                    "height": 30,
+                    "media_type": "image/png",
+                    "mode": "CONTAIN",
+                },
+            )
+        )
+    )
+
+    assert result.status is CapabilityStatus.FAILED
+    assert result.error_code == "UNSUPPORTED_MODE"
+
+
+def test_validate_fails_unknown_actual_mime_even_without_expected_mime() -> None:
+    import asyncio
+
+    result = asyncio.run(
+        ValidateStaticCapability().invoke(
+            _invocation(
+                "vulca.image.validate_static",
+                {"artifact": _raw_b64(_bmp_bytes())},
+            )
+        )
+    )
+
+    assert result.status is CapabilityStatus.SUCCEEDED
+    assert result.output["validation_status"] == "FAIL"
+    assert result.output["checks"]["media_type"]["status"] == "FAIL"

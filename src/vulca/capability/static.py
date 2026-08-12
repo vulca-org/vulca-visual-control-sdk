@@ -34,6 +34,8 @@ _MIME_TO_FORMAT = {
     "image/webp": "WEBP",
     "image/gif": "GIF",
 }
+_SUPPORTED_IMAGE_MODES = frozenset({"RGB", "RGBA", "L", "P"})
+_PATH_SUFFIXES = frozenset({".bmp", ".gif", ".jpeg", ".jpg", ".otf", ".png", ".ttf", ".webp"})
 _Font: TypeAlias = ImageFont.FreeTypeFont | ImageFont.ImageFont
 
 
@@ -118,7 +120,17 @@ def _decode_base64(value: str) -> bytes:
     return data
 
 
-def _authorised_path(path: Path, options: Mapping[str, JsonValue], *, required: bool) -> Path:
+def _looks_like_path(value: str) -> bool:
+    text = value.strip()
+    path = Path(text).expanduser()
+    return (
+        path.is_absolute()
+        or text.startswith(("./", "../", "~/"))
+        or path.suffix.lower() in _PATH_SUFFIXES
+    )
+
+
+def _authorised_path(path: Path, options: Mapping[str, JsonValue], *, required: bool = True) -> Path:
     paths_value = options.get("authorized_paths", [])
     roots_value = options.get("authorized_roots", [])
     if not isinstance(paths_value, list) or not isinstance(roots_value, list):
@@ -127,8 +139,8 @@ def _authorised_path(path: Path, options: Mapping[str, JsonValue], *, required: 
         raise _StaticFailure("INVALID_AUTHORIZATION")
     try:
         resolved = path.expanduser().resolve(strict=True)
-        paths = [Path(cast(str, value)).expanduser().resolve(strict=False) for value in paths_value]
-        roots = [Path(cast(str, value)).expanduser().resolve(strict=False) for value in roots_value]
+        paths = [Path(cast(str, value)).expanduser().resolve(strict=True) for value in paths_value]
+        roots = [Path(cast(str, value)).expanduser().resolve(strict=True) for value in roots_value]
     except (FileNotFoundError, OSError, RuntimeError, ValueError):
         raise _StaticFailure("MISSING_INPUT") from None
     if not paths and not roots:
@@ -140,7 +152,7 @@ def _authorised_path(path: Path, options: Mapping[str, JsonValue], *, required: 
     raise _StaticFailure("UNAUTHORIZED_PATH")
 
 
-def _read_input(value: object, options: Mapping[str, JsonValue], *, required_path_auth: bool = False) -> bytes:
+def _read_input(value: object, options: Mapping[str, JsonValue], *, required_path_auth: bool = True) -> bytes:
     if not isinstance(value, str) or not value.strip():
         raise _StaticFailure("INVALID_INPUT")
     try:
@@ -158,6 +170,9 @@ def _read_input(value: object, options: Mapping[str, JsonValue], *, required_pat
         if not data:
             raise _StaticFailure("EMPTY_ARTIFACT")
         return data
+    if _looks_like_path(value):
+        _authorised_path(candidate, options, required=True)
+        raise _StaticFailure("MISSING_INPUT")
     return _decode_base64(value)
 
 
@@ -166,7 +181,7 @@ def _open_image(data: bytes) -> Image.Image:
         with Image.open(BytesIO(data)) as opened:
             opened.load()
             return opened.copy()
-    except (UnidentifiedImageError, OSError, ValueError, SyntaxError):
+    except (UnidentifiedImageError, OSError, TypeError, ValueError, SyntaxError):
         raise _StaticFailure("CORRUPT_ARTIFACT") from None
 
 
@@ -182,26 +197,38 @@ def _mime_from_bytes(data: bytes) -> str:
     return ""
 
 
+def _normalise_image(image: Image.Image) -> Image.Image:
+    if image.mode not in _SUPPORTED_IMAGE_MODES:
+        raise _StaticFailure("UNSUPPORTED_MODE")
+    if image.mode in {"RGB", "RGBA"}:
+        return image.copy()
+    if image.mode == "P":
+        return image.convert("RGBA" if _alpha_present(image) else "RGB")
+    return image.convert("RGB")
+
+
 def _encode_image(image: Image.Image, media_type: str) -> bytes:
     normalized = media_type.lower()
     image_format = _MIME_TO_FORMAT.get(normalized)
     if image_format is None:
         raise _StaticFailure("INVALID_FORMAT")
-    prepared = image
-    if image_format in {"JPEG", "GIF"} and prepared.mode not in {"RGB", "L", "P"}:
-        if image_format == "JPEG" and "A" in prepared.getbands():
-            canvas = Image.new("RGB", prepared.size, (255, 255, 255))
-            canvas.paste(prepared.convert("RGBA"), mask=prepared.convert("RGBA").getchannel("A"))
-            prepared = canvas
-        else:
-            prepared = prepared.convert("RGB")
+    prepared = _normalise_image(image)
+    if image_format == "JPEG" and prepared.mode == "RGBA":
+        canvas = Image.new("RGB", prepared.size, (255, 255, 255))
+        canvas.paste(prepared, mask=prepared.getchannel("A"))
+        prepared = canvas
+    elif image_format in {"JPEG", "GIF"} and prepared.mode not in {"RGB", "L", "P"}:
+        prepared = prepared.convert("RGB")
     output = BytesIO()
     save_options: dict[str, object] = {}
     if image_format == "JPEG":
         save_options.update(quality=95, subsampling=0, optimize=False, progressive=False)
     elif image_format == "WEBP":
         save_options.update(lossless=True, method=6)
-    prepared.save(output, format=image_format, **save_options)
+    try:
+        prepared.save(output, format=image_format, **save_options)
+    except (OSError, TypeError, ValueError):
+        raise _StaticFailure("UNSUPPORTED_MODE") from None
     return output.getvalue()
 
 
@@ -363,7 +390,7 @@ class ComposeStaticCapability:
             values = invocation.inputs
             options = invocation.options
             background_data = _read_input(values.get("background"), options)
-            background = _open_image(background_data)
+            background = _normalise_image(_open_image(background_data))
             zone = _safe_area(values, background.width, background.height)
             headline = values.get("headline")
             if not isinstance(headline, str) or not headline.strip():
@@ -386,7 +413,7 @@ class ComposeStaticCapability:
             logo_value = values.get("logo")
             logo: Image.Image | None = None
             if logo_value is not None and logo_value != "":
-                logo = _open_image(_read_input(logo_value, options, required_path_auth=True))
+                logo = _normalise_image(_open_image(_read_input(logo_value, options, required_path_auth=True)))
             draw = ImageDraw.Draw(background)
             max_width = zone["width"]
             blocks: list[tuple[str, list[str], _Font, tuple[int, ...]]] = []
@@ -510,7 +537,7 @@ class AdaptStaticCapability:
             mode = values.get("mode")
             if not isinstance(mode, str) or mode.upper() not in {"COVER", "CONTAIN", "SMART_CENTER"}:
                 raise _StaticFailure("INVALID_FORMAT")
-            source = _open_image(_read_input(values.get("master"), options))
+            source = _normalise_image(_open_image(_read_input(values.get("master"), options)))
             if mode.upper() == "CONTAIN":
                 output = _resize_contain(source, width, height, media_type)
             else:
@@ -564,7 +591,12 @@ class ValidateStaticCapability:
         alpha_policy_value = values.get("alpha_policy")
         alpha_policy = alpha_policy_value.upper() if isinstance(alpha_policy_value, str) else None
         checks: dict[str, JsonValue] = {
-            "media_type": _check(expected_mime is None or expected_mime == actual_mime, expected_mime, actual_mime),
+            "media_type": _check(
+                actual_mime in _MIME_TO_FORMAT
+                and (expected_mime is None or expected_mime == actual_mime),
+                expected_mime,
+                actual_mime,
+            ),
             "width": _check(expected_width is None or expected_width == width, expected_width, width),
             "height": _check(expected_height is None or expected_height == height, expected_height, height),
             "color_mode": _check(expected_mode is None or expected_mode == image.mode, expected_mode, image.mode),

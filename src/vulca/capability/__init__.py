@@ -20,7 +20,14 @@ from .types import (
     SideEffectState,
     sha256_bytes,
 )
-from .runtime import CapabilityRuntime, EnvironmentCapabilityRuntime
+from .runtime import (
+    CapabilityProviderConstructionError,
+    CapabilityProviderTimeoutError,
+    CapabilityProviderTransportError,
+    CapabilityProviderUnsupportedError,
+    CapabilityRuntime,
+    EnvironmentCapabilityRuntime,
+)
 from .builtin import (
     EditImageCapability,
     EvaluateImageCapability,
@@ -48,6 +55,10 @@ __all__ = [
     "CapabilityRegistry",
     "CapabilityRuntime",
     "EnvironmentCapabilityRuntime",
+    "CapabilityProviderConstructionError",
+    "CapabilityProviderTimeoutError",
+    "CapabilityProviderTransportError",
+    "CapabilityProviderUnsupportedError",
     "GenerateImageCapability",
     "EditImageCapability",
     "ComposeStaticCapability",

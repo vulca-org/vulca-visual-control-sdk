@@ -9,15 +9,17 @@ from __future__ import annotations
 
 import base64
 import binascii
+import math
 import re
 import shutil
+import stat
 import tempfile
 import time
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Mapping, Sequence, cast
+from typing import Any, Mapping, NoReturn, cast
 
 from vulca.evaluate import aevaluate
 from vulca.inpaint import ainpaint
@@ -25,7 +27,14 @@ from vulca.providers.base import ImageProvider
 from vulca.types import EvalResult
 
 from .registry import CapabilityRegistry
-from .runtime import CapabilityRuntime, EnvironmentCapabilityRuntime
+from .runtime import (
+    CapabilityProviderConstructionError,
+    CapabilityProviderTimeoutError,
+    CapabilityProviderTransportError,
+    CapabilityProviderUnsupportedError,
+    CapabilityRuntime,
+    EnvironmentCapabilityRuntime,
+)
 from .types import (
     Capability,
     CapabilityArtifact,
@@ -51,7 +60,25 @@ _OUTPUT_FORMAT_MIMES = {
     "gif": "image/gif",
 }
 _COORDINATE_RE = re.compile(r"^\s*-?\d+\s*,\s*-?\d+\s*,\s*-?\d+\s*,\s*-?\d+\s*$")
-_PROVIDER_CONSTRUCTION_ERRORS = (ValueError, TypeError, OSError, NotImplementedError)
+_REDACTED = "[REDACTED]"
+_PATH_SUFFIXES = frozenset({".bmp", ".gif", ".jpeg", ".jpg", ".otf", ".png", ".ttf", ".webp"})
+_GENERATE_KEYWORDS = frozenset(
+    {
+        "prompt",
+        "tradition",
+        "subject",
+        "reference_image_b64",
+        "negative_prompt",
+        "seed",
+        "steps",
+        "cfg_scale",
+        "width",
+        "height",
+        "input_fidelity",
+        "quality",
+        "output_format",
+    }
+)
 
 
 class _PreflightFailure(Exception):
@@ -74,6 +101,15 @@ class _PostflightFailure(Exception):
 class _InputBytes:
     data: bytes
     source_path: Path | None
+
+
+def _rethrow_programming(exc: Exception) -> NoReturn:
+    """Preserve an exception category without retaining provider text."""
+    try:
+        replacement = type(exc)("capability programming error")
+    except Exception:
+        replacement = RuntimeError("capability programming error")
+    raise replacement from None
 
 
 def _manifest(
@@ -209,8 +245,8 @@ def _path_policy(options: Mapping[str, JsonValue]) -> tuple[list[Path], list[Pat
     if not isinstance(paths_value, list) or not isinstance(roots_value, list):
         raise _PreflightFailure("INVALID_AUTHORIZATION")
     try:
-        paths = [Path(value).expanduser().resolve(strict=False) for value in paths_value if isinstance(value, str)]
-        roots = [Path(value).expanduser().resolve(strict=False) for value in roots_value if isinstance(value, str)]
+        paths = [Path(value).expanduser().resolve(strict=True) for value in paths_value if isinstance(value, str)]
+        roots = [Path(value).expanduser().resolve(strict=True) for value in roots_value if isinstance(value, str)]
     except (OSError, RuntimeError, ValueError):
         raise _PreflightFailure("INVALID_AUTHORIZATION") from None
     if len(paths) != len(paths_value) or len(roots) != len(roots_value):
@@ -218,7 +254,17 @@ def _path_policy(options: Mapping[str, JsonValue]) -> tuple[list[Path], list[Pat
     return paths, roots
 
 
-def _authorise_path(path: Path, options: Mapping[str, JsonValue], *, required: bool = False) -> Path:
+def _looks_like_path(value: str) -> bool:
+    text = value.strip()
+    path = Path(text).expanduser()
+    return (
+        path.is_absolute()
+        or text.startswith(("./", "../", "~/"))
+        or path.suffix.lower() in _PATH_SUFFIXES
+    )
+
+
+def _authorise_path(path: Path, options: Mapping[str, JsonValue], *, required: bool = True) -> Path:
     paths, roots = _path_policy(options)
     try:
         resolved = path.expanduser().resolve(strict=True)
@@ -233,7 +279,7 @@ def _authorise_path(path: Path, options: Mapping[str, JsonValue], *, required: b
     raise _PreflightFailure("UNAUTHORIZED_PATH")
 
 
-def _read_input(value: object, options: Mapping[str, JsonValue], *, required_path_auth: bool = False) -> _InputBytes:
+def _read_input(value: object, options: Mapping[str, JsonValue], *, required_path_auth: bool = True) -> _InputBytes:
     if not isinstance(value, str) or not value.strip():
         raise _PreflightFailure("INVALID_INPUT")
     candidate = Path(value).expanduser()
@@ -250,6 +296,9 @@ def _read_input(value: object, options: Mapping[str, JsonValue], *, required_pat
         if not data:
             raise _PreflightFailure("EMPTY_ARTIFACT")
         return _InputBytes(data=data, source_path=resolved)
+    if _looks_like_path(value):
+        _authorise_path(candidate, options, required=True)
+        raise _PreflightFailure("MISSING_INPUT")
     return _InputBytes(data=_decode_base64(value), source_path=None)
 
 
@@ -272,7 +321,7 @@ def _image_size(data: bytes, *, code: str = "CORRUPT_ARTIFACT") -> tuple[int, in
         with Image.open(BytesIO(data)) as image:
             image.load()
             return image.size
-    except (OSError, ValueError, SyntaxError):
+    except (OSError, TypeError, ValueError, SyntaxError):
         raise _PreflightFailure(code) from None
 
 
@@ -289,9 +338,17 @@ def _cost_minor(value: object) -> tuple[int, bool]:
     return int(cents), True
 
 
-def _metadata_string(metadata: Mapping[str, object], key: str) -> str | None:
+def _redact_string(value: str, secret: str) -> str:
+    if secret:
+        return value.replace(secret, _REDACTED)
+    return value
+
+
+def _metadata_string(metadata: Mapping[str, object], key: str, *, secret: str = "") -> str | None:
     value = metadata.get(key)
-    return value if isinstance(value, str) and value.strip() else None
+    if not isinstance(value, str) or not value.strip():
+        return None
+    return _redact_string(value, secret)
 
 
 def _provider_receipt(
@@ -301,16 +358,17 @@ def _provider_receipt(
     request_id: str | None,
     cost_known: bool,
     latency_ms: int,
+    secret: str = "",
 ) -> dict[str, JsonValue]:
     receipt: dict[str, JsonValue] = {
-        "provider": provider,
+        "provider": _redact_string(provider, secret),
         "costKnown": cost_known,
         "latency_ms": latency_ms,
     }
     if model is not None:
-        receipt["model"] = model
+        receipt["model"] = _redact_string(model, secret)
     if request_id is not None:
-        receipt["request_id"] = request_id
+        receipt["request_id"] = _redact_string(request_id, secret)
     return receipt
 
 
@@ -331,6 +389,9 @@ def _reference_b64(value: object, options: Mapping[str, JsonValue]) -> str:
         is_file = False
     if is_file:
         return base64.b64encode(_read_input(value, options).data).decode("ascii")
+    if _looks_like_path(value):
+        _authorise_path(candidate, options)
+        raise _PreflightFailure("MISSING_INPUT")
     if value.strip().startswith("data:"):
         data = _decode_base64(value)
         return base64.b64encode(data).decode("ascii")
@@ -348,61 +409,101 @@ def _image_argument(value: object, options: Mapping[str, JsonValue]) -> str:
         is_file = False
     if is_file:
         return str(_authorise_path(candidate, options))
+    if _looks_like_path(value):
+        _authorise_path(candidate, options)
+        raise _PreflightFailure("MISSING_INPUT")
     data = _decode_base64(value)
     mime = _mime_from_bytes(data) or "image/png"
     return f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}"
 
 
-def _cleanup_edit_paths(wrapper_dir: Path, paths: Sequence[object]) -> None:
-    """Remove only wrapper-owned files and temporary inpaint scratch paths."""
-    temp_root = Path(tempfile.gettempdir()).resolve()
+def _cleanup_edit_root(owned_root: Path) -> None:
+    """Remove exactly the root created by the Edit capability."""
     try:
-        shutil.rmtree(wrapper_dir)
+        shutil.rmtree(owned_root)
     except FileNotFoundError:
         pass
     except OSError:
         pass
-    for value in paths:
-        if not isinstance(value, str) or not value:
-            continue
-        path = Path(value)
-        try:
-            resolved = path.resolve(strict=False)
-        except (OSError, RuntimeError, ValueError):
-            continue
-        if resolved == wrapper_dir or resolved.is_relative_to(wrapper_dir):
-            continue
-        parent = resolved.parent
-        if not parent.name.startswith("vulca-inpaint-"):
-            continue
-        try:
-            if parent.is_relative_to(temp_root):
-                shutil.rmtree(parent)
-        except (OSError, RuntimeError, ValueError):
-            continue
 
 
-def _selected_output_path(result: object) -> tuple[Path, list[object]]:
+def _selected_output_path(result: object, owned_root: Path) -> Path:
     variants = getattr(result, "variants", None)
     if not isinstance(variants, (list, tuple)) or not variants:
         raise _PostflightFailure("EMPTY_ARTIFACT")
+    if len(variants) != 1:
+        raise _PostflightFailure("INVALID_VARIANTS")
     selected = getattr(result, "selected", 0)
-    if isinstance(selected, bool) or not isinstance(selected, int) or selected < 0 or selected >= len(variants):
+    if selected != 0:
+        raise _PostflightFailure("INVALID_VARIANTS")
+
+    blended = getattr(result, "blended", None)
+    if not isinstance(blended, str) or not blended.strip():
         raise _PostflightFailure("EMPTY_ARTIFACT")
-    selected_path = variants[selected]
-    if not isinstance(selected_path, str) or not selected_path:
+    candidate = Path(blended)
+    if not candidate.is_absolute():
+        raise _PostflightFailure("OUTPUT_OUTSIDE_SCRATCH")
+    try:
+        root = owned_root.resolve(strict=True)
+        if candidate.is_symlink():
+            raise _PostflightFailure("OUTPUT_OUTSIDE_SCRATCH")
+        resolved = candidate.resolve(strict=True)
+    except _PostflightFailure:
+        raise
+    except FileNotFoundError:
+        raise _PostflightFailure("EMPTY_ARTIFACT") from None
+    except (OSError, RuntimeError, ValueError):
+        raise _PostflightFailure("OUTPUT_OUTSIDE_SCRATCH") from None
+    if not resolved.is_relative_to(root):
+        raise _PostflightFailure("OUTPUT_OUTSIDE_SCRATCH")
+    try:
+        mode = resolved.stat().st_mode
+    except OSError:
+        raise _PostflightFailure("EMPTY_ARTIFACT") from None
+    if not stat.S_ISREG(mode) or resolved.is_symlink():
         raise _PostflightFailure("EMPTY_ARTIFACT")
-    return Path(selected_path), list(variants)
+    return resolved
 
 
-def _json_safe(value: object) -> JsonValue:
-    if value is None or isinstance(value, (str, int, float, bool)):
+def _validated_edit_output(data: bytes, source_size: tuple[int, int]) -> str:
+    mime = _mime_from_bytes(data)
+    if mime not in _IMAGE_MIME_TYPES:
+        raise _PostflightFailure("CORRUPT_ARTIFACT")
+    try:
+        from PIL import Image
+
+        with Image.open(BytesIO(data)) as image:
+            image.load()
+            if image.size != source_size:
+                raise _PostflightFailure("DIMENSION_MISMATCH")
+    except _PostflightFailure:
+        raise
+    except (OSError, ValueError, SyntaxError):
+        raise _PostflightFailure("CORRUPT_ARTIFACT") from None
+    return mime
+
+
+def _json_safe(value: object, *, secret: str = "") -> JsonValue:
+    if value is None:
+        return None
+    if isinstance(value, bool) or isinstance(value, int):
         return value
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise _PostflightFailure("INVALID_EVALUATION_RESULT")
+        return value
+    if isinstance(value, str):
+        return _redact_string(value, secret)
     if isinstance(value, dict):
-        return {str(key): _json_safe(nested) for key, nested in value.items()}
+        safe: dict[str, JsonValue] = {}
+        for key, nested in value.items():
+            if not isinstance(key, str):
+                raise _PostflightFailure("INVALID_EVALUATION_RESULT")
+            safe[_redact_string(key, secret)] = _json_safe(nested, secret=secret)
+        return safe
     if isinstance(value, (list, tuple)):
-        return [_json_safe(nested) for nested in value]
-    return None
+        return [_json_safe(nested, secret=secret) for nested in value]
+    raise _PostflightFailure("INVALID_EVALUATION_RESULT")
 
 
 class GenerateImageCapability:
@@ -423,6 +524,7 @@ class GenerateImageCapability:
         start = time.perf_counter()
         inputs = invocation.inputs
         options = invocation.options
+        secret = ""
         try:
             provider_name, binding_ref, constructor_options = _required_binding(options)
             prompt = _text(inputs, "prompt", default=None)
@@ -449,8 +551,42 @@ class GenerateImageCapability:
             quality = _text(inputs, "quality") or None
             output_format = _text(inputs, "output_format") or None
             request_options = _request_options(options)
+            if output_format is not None and output_format.lower() not in _OUTPUT_FORMAT_MIMES:
+                raise _PreflightFailure("INVALID_FORMAT")
+            if any(not isinstance(key, str) for key in request_options):
+                raise _PreflightFailure("INVALID_OPTIONS")
+            if _GENERATE_KEYWORDS.intersection(request_options):
+                raise _PreflightFailure("REQUEST_OPTION_COLLISION")
+            secret = self.runtime.api_key(binding_ref=binding_ref)
+            if not isinstance(secret, str):
+                raise _PreflightFailure("INVALID_PROVIDER_BINDING")
         except _PreflightFailure as failure:
             return _failed(invocation, code=failure.code, state=SideEffectState.NOT_STARTED, start=start)
+        except CapabilityProviderConstructionError:
+            return _failed(
+                invocation,
+                code="PROVIDER_CONSTRUCTION_FAILED",
+                state=SideEffectState.NOT_STARTED,
+                start=start,
+            )
+        except CapabilityProviderUnsupportedError:
+            return _failed(
+                invocation,
+                code="PROVIDER_UNSUPPORTED",
+                state=SideEffectState.NOT_STARTED,
+                start=start,
+            )
+        except CapabilityProviderTimeoutError:
+            return _failed(invocation, code="PROVIDER_TIMEOUT", state=SideEffectState.UNKNOWN, start=start)
+        except CapabilityProviderTransportError:
+            return _failed(
+                invocation,
+                code="PROVIDER_TRANSPORT_FAILED",
+                state=SideEffectState.UNKNOWN,
+                start=start,
+            )
+        except Exception as exc:
+            _rethrow_programming(exc)
 
         try:
             provider: ImageProvider = self.runtime.image_provider(
@@ -458,13 +594,26 @@ class GenerateImageCapability:
                 binding_ref=binding_ref,
                 constructor_options=constructor_options,
             )
-        except _PROVIDER_CONSTRUCTION_ERRORS:
+        except CapabilityProviderConstructionError:
             return _failed(
                 invocation,
                 code="PROVIDER_CONSTRUCTION_FAILED",
                 state=SideEffectState.NOT_STARTED,
                 start=start,
             )
+        except CapabilityProviderUnsupportedError:
+            return _failed(invocation, code="PROVIDER_UNSUPPORTED", state=SideEffectState.NOT_STARTED, start=start)
+        except CapabilityProviderTimeoutError:
+            return _failed(invocation, code="PROVIDER_TIMEOUT", state=SideEffectState.UNKNOWN, start=start)
+        except CapabilityProviderTransportError:
+            return _failed(
+                invocation,
+                code="PROVIDER_TRANSPORT_FAILED",
+                state=SideEffectState.UNKNOWN,
+                start=start,
+            )
+        except Exception as exc:
+            _rethrow_programming(exc)
 
         try:
             result = await provider.generate(
@@ -483,19 +632,26 @@ class GenerateImageCapability:
                 output_format=output_format,
                 **request_options,
             )
-        except TimeoutError:
+        except (CapabilityProviderTimeoutError, TimeoutError):
             return _failed(invocation, code="PROVIDER_TIMEOUT", state=SideEffectState.UNKNOWN, start=start)
-        except OSError:
+        except (CapabilityProviderTransportError, ConnectionError):
             return _failed(
                 invocation,
                 code="PROVIDER_TRANSPORT_FAILED",
                 state=SideEffectState.UNKNOWN,
                 start=start,
             )
-        except NotImplementedError:
+        except CapabilityProviderConstructionError:
+            return _failed(
+                invocation,
+                code="PROVIDER_CONSTRUCTION_FAILED",
+                state=SideEffectState.NOT_STARTED,
+                start=start,
+            )
+        except CapabilityProviderUnsupportedError:
             return _failed(invocation, code="PROVIDER_UNSUPPORTED", state=SideEffectState.UNKNOWN, start=start)
-        except ValueError:
-            return _failed(invocation, code="PROVIDER_FAILED", state=SideEffectState.UNKNOWN, start=start)
+        except Exception as exc:
+            _rethrow_programming(exc)
 
         try:
             image_b64 = getattr(result, "image_b64")
@@ -514,9 +670,9 @@ class GenerateImageCapability:
             cost_minor, cost_known = _cost_minor(metadata.get("cost_usd"))
             constructor_model = constructor_options.get("model")
             model = _metadata_string(metadata, "model") or (
-                constructor_model if isinstance(constructor_model, str) else None
+                _redact_string(constructor_model, secret) if isinstance(constructor_model, str) else None
             )
-            request_id = _metadata_string(metadata, "request_id")
+            request_id = _metadata_string(metadata, "request_id", secret=secret)
             latency_ms = _elapsed_ms(start)
             artifact = CapabilityArtifact(
                 logical_name=_artifact_name(inputs, "generated-image"),
@@ -536,6 +692,7 @@ class GenerateImageCapability:
                     request_id=request_id,
                     cost_known=cost_known,
                     latency_ms=latency_ms,
+                    secret=secret,
                 ),
                 latency_ms=latency_ms,
                 cost_minor=cost_minor,
@@ -543,6 +700,8 @@ class GenerateImageCapability:
             )
         except (_PostflightFailure, _PreflightFailure) as failure:
             return _failed(invocation, code=failure.code, state=SideEffectState.UNKNOWN, start=start)
+        except Exception as exc:
+            _rethrow_programming(exc)
 
 
 class EditImageCapability:
@@ -561,8 +720,7 @@ class EditImageCapability:
 
     async def invoke(self, invocation: CapabilityInvocation) -> CapabilityResult:
         start = time.perf_counter()
-        wrapper_dir = Path(tempfile.mkdtemp(prefix="vulca-inpaint-"))
-        cleanup_candidates: list[object] = []
+        owned_root = Path(tempfile.mkdtemp(prefix="vulca-capability-edit-"))
         try:
             inputs = invocation.inputs
             options = invocation.options
@@ -570,10 +728,10 @@ class EditImageCapability:
             instruction = _text(inputs, "instruction", required=True)
             tradition = _text(inputs, "tradition")
             source = _read_input(inputs.get("source"), options)
-            _image_size(source.data)
+            source_size = _image_size(source.data)
             source_path = source.source_path
             if source_path is None:
-                source_path = wrapper_dir / "source.png"
+                source_path = owned_root / "source.png"
                 source_path.write_bytes(source.data)
             mask_path = ""
             region = ""
@@ -592,7 +750,7 @@ class EditImageCapability:
                 if mask_size != source_size:
                     raise _PreflightFailure("MASK_SIZE_MISMATCH")
                 if mask.source_path is None:
-                    mask_file = wrapper_dir / "mask.png"
+                    mask_file = owned_root / "mask.png"
                     mask_file.write_bytes(mask.data)
                     mask_path = str(mask_file)
                 else:
@@ -612,22 +770,35 @@ class EditImageCapability:
             mock = options.get("mock", False)
             if not isinstance(mock, bool):
                 raise _PreflightFailure("INVALID_OPTIONS")
-            output_path = wrapper_dir / "selected.png"
-            cleanup_candidates.append(str(output_path))
+            output_path = owned_root / "blended.png"
         except _PreflightFailure as failure:
-            _cleanup_edit_paths(wrapper_dir, cleanup_candidates)
+            _cleanup_edit_root(owned_root)
             return _failed(invocation, code=failure.code, state=SideEffectState.NOT_STARTED, start=start)
-        except _PROVIDER_CONSTRUCTION_ERRORS:
-            _cleanup_edit_paths(wrapper_dir, cleanup_candidates)
+        except CapabilityProviderConstructionError:
+            _cleanup_edit_root(owned_root)
             return _failed(
                 invocation,
                 code="PROVIDER_CONSTRUCTION_FAILED",
                 state=SideEffectState.NOT_STARTED,
                 start=start,
             )
-        except Exception:
-            _cleanup_edit_paths(wrapper_dir, cleanup_candidates)
-            raise
+        except CapabilityProviderUnsupportedError:
+            _cleanup_edit_root(owned_root)
+            return _failed(invocation, code="PROVIDER_UNSUPPORTED", state=SideEffectState.NOT_STARTED, start=start)
+        except CapabilityProviderTimeoutError:
+            _cleanup_edit_root(owned_root)
+            return _failed(invocation, code="PROVIDER_TIMEOUT", state=SideEffectState.UNKNOWN, start=start)
+        except CapabilityProviderTransportError:
+            _cleanup_edit_root(owned_root)
+            return _failed(
+                invocation,
+                code="PROVIDER_TRANSPORT_FAILED",
+                state=SideEffectState.UNKNOWN,
+                start=start,
+            )
+        except Exception as exc:
+            _cleanup_edit_root(owned_root)
+            _rethrow_programming(exc)
 
         try:
             result = await ainpaint(
@@ -639,36 +810,35 @@ class EditImageCapability:
                 provider=cast(str, provider_name),
                 count=1,
                 select=0,
-                output="",
+                output=str(output_path),
                 output_path=str(output_path),
+                scratch_dir=str(owned_root),
                 api_key=api_key,
                 mock=mock,
             )
-        except TimeoutError:
-            _cleanup_edit_paths(wrapper_dir, cleanup_candidates)
+        except CapabilityProviderConstructionError:
+            _cleanup_edit_root(owned_root)
+            return _failed(invocation, code="PROVIDER_CONSTRUCTION_FAILED", state=SideEffectState.NOT_STARTED, start=start)
+        except CapabilityProviderUnsupportedError:
+            _cleanup_edit_root(owned_root)
+            return _failed(invocation, code="PROVIDER_UNSUPPORTED", state=SideEffectState.NOT_STARTED, start=start)
+        except (CapabilityProviderTimeoutError, TimeoutError):
+            _cleanup_edit_root(owned_root)
             return _failed(invocation, code="PROVIDER_TIMEOUT", state=SideEffectState.UNKNOWN, start=start)
-        except OSError:
-            _cleanup_edit_paths(wrapper_dir, cleanup_candidates)
+        except (CapabilityProviderTransportError, ConnectionError):
+            _cleanup_edit_root(owned_root)
             return _failed(
                 invocation,
                 code="PROVIDER_TRANSPORT_FAILED",
                 state=SideEffectState.UNKNOWN,
                 start=start,
             )
-        except NotImplementedError:
-            _cleanup_edit_paths(wrapper_dir, cleanup_candidates)
-            return _failed(invocation, code="PROVIDER_UNSUPPORTED", state=SideEffectState.UNKNOWN, start=start)
-        except ValueError:
-            _cleanup_edit_paths(wrapper_dir, cleanup_candidates)
-            return _failed(invocation, code="PROVIDER_FAILED", state=SideEffectState.UNKNOWN, start=start)
-        except Exception:
-            _cleanup_edit_paths(wrapper_dir, cleanup_candidates)
-            raise
+        except Exception as exc:
+            _cleanup_edit_root(owned_root)
+            _rethrow_programming(exc)
 
         try:
-            selected_path, variant_paths = _selected_output_path(result)
-            cleanup_candidates.extend(variant_paths)
-            cleanup_candidates.append(getattr(result, "blended", ""))
+            selected_path = _selected_output_path(result, owned_root)
             try:
                 output_bytes = selected_path.read_bytes()
             except (FileNotFoundError, OSError):
@@ -677,7 +847,7 @@ class EditImageCapability:
                 raise _PostflightFailure("EMPTY_ARTIFACT")
             cost_minor, cost_known = _cost_minor(getattr(result, "cost_usd", None))
             latency_ms = _elapsed_ms(start)
-            output_mime = _mime_from_bytes(output_bytes) or "image/png"
+            output_mime = _validated_edit_output(output_bytes, source_size)
             artifact = CapabilityArtifact(
                 logical_name=_artifact_name(invocation.inputs, "edited-image"),
                 media_type=output_mime,
@@ -707,8 +877,10 @@ class EditImageCapability:
             )
         except _PostflightFailure as failure:
             return _failed(invocation, code=failure.code, state=SideEffectState.UNKNOWN, start=start)
+        except Exception as exc:
+            _rethrow_programming(exc)
         finally:
-            _cleanup_edit_paths(wrapper_dir, cleanup_candidates)
+            _cleanup_edit_root(owned_root)
 
 
 class EvaluateImageCapability:
@@ -751,13 +923,26 @@ class EvaluateImageCapability:
             vlm_model = _text(inputs, "vlm_model")
         except _PreflightFailure as failure:
             return _failed(invocation, code=failure.code, state=SideEffectState.NOT_STARTED, start=start)
-        except _PROVIDER_CONSTRUCTION_ERRORS:
+        except CapabilityProviderConstructionError:
             return _failed(
                 invocation,
                 code="PROVIDER_CONSTRUCTION_FAILED",
                 state=SideEffectState.NOT_STARTED,
                 start=start,
             )
+        except CapabilityProviderUnsupportedError:
+            return _failed(invocation, code="PROVIDER_UNSUPPORTED", state=SideEffectState.NOT_STARTED, start=start)
+        except CapabilityProviderTimeoutError:
+            return _failed(invocation, code="PROVIDER_TIMEOUT", state=SideEffectState.UNKNOWN, start=start)
+        except CapabilityProviderTransportError:
+            return _failed(
+                invocation,
+                code="PROVIDER_TRANSPORT_FAILED",
+                state=SideEffectState.UNKNOWN,
+                start=start,
+            )
+        except Exception as exc:
+            _rethrow_programming(exc)
 
         try:
             result = await aevaluate(
@@ -771,26 +956,38 @@ class EvaluateImageCapability:
                 mode=mode,
                 vlm_model=vlm_model,
             )
-        except TimeoutError:
+        except (CapabilityProviderTimeoutError, TimeoutError):
             return _failed(invocation, code="PROVIDER_TIMEOUT", state=SideEffectState.UNKNOWN, start=start)
-        except OSError:
+        except (CapabilityProviderTransportError, ConnectionError):
             return _failed(
                 invocation,
                 code="PROVIDER_TRANSPORT_FAILED",
                 state=SideEffectState.UNKNOWN,
                 start=start,
             )
-        except NotImplementedError:
-            return _failed(invocation, code="PROVIDER_UNSUPPORTED", state=SideEffectState.UNKNOWN, start=start)
-        except ValueError:
-            return _failed(invocation, code="PROVIDER_FAILED", state=SideEffectState.UNKNOWN, start=start)
+        except CapabilityProviderConstructionError:
+            return _failed(
+                invocation,
+                code="PROVIDER_CONSTRUCTION_FAILED",
+                state=SideEffectState.NOT_STARTED,
+                start=start,
+            )
+        except CapabilityProviderUnsupportedError:
+            return _failed(invocation, code="PROVIDER_UNSUPPORTED", state=SideEffectState.NOT_STARTED, start=start)
+        except Exception as exc:
+            _rethrow_programming(exc)
 
         try:
-            output = _evaluation_output(result)
+            output = _evaluation_output(result, secret=api_key)
             cost_value: object = result.cost_usd if isinstance(result, EvalResult) else (
                 result.get("cost_usd") if isinstance(result, dict) else None
             )
-            cost_minor, cost_known = _cost_minor(cost_value)
+            try:
+                cost_minor, cost_known = _cost_minor(cost_value)
+            except _PostflightFailure as failure:
+                if failure.code == "INVALID_COST":
+                    raise _PostflightFailure("INVALID_EVALUATION_RESULT") from None
+                raise
             latency_ms = _elapsed_ms(start)
             model = options.get("model")
             model_value = model if isinstance(model, str) and model.strip() else (vlm_model or None)
@@ -808,6 +1005,7 @@ class EvaluateImageCapability:
                     request_id=None,
                     cost_known=cost_known,
                     latency_ms=latency_ms,
+                    secret=api_key,
                 ),
                 latency_ms=latency_ms,
                 cost_minor=cost_minor,
@@ -815,9 +1013,11 @@ class EvaluateImageCapability:
             )
         except _PostflightFailure as failure:
             return _failed(invocation, code=failure.code, state=SideEffectState.UNKNOWN, start=start)
+        except Exception as exc:
+            _rethrow_programming(exc)
 
 
-def _evaluation_output(result: EvalResult | dict) -> dict[str, JsonValue]:
+def _evaluation_output(result: EvalResult | dict, *, secret: str = "") -> dict[str, JsonValue]:
     if isinstance(result, EvalResult):
         values: Mapping[str, object] = {
             "score": result.score,
@@ -847,7 +1047,7 @@ def _evaluation_output(result: EvalResult | dict) -> dict[str, JsonValue]:
     output: dict[str, JsonValue] = {}
     for key, value in values.items():
         if value is not None:
-            output[key] = _json_safe(value)
+            output[key] = _json_safe(value, secret=secret)
     return output
 
 

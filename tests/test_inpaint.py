@@ -57,6 +57,14 @@ from PIL import Image
 from vulca.studio.phases.inpaint import crop_region, InpaintPhase
 
 
+def _png_bytes_for_inpaint() -> bytes:
+    from io import BytesIO
+
+    buffer = BytesIO()
+    Image.new("RGB", (32, 24), "green").save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
 class TestCropRegion:
     def test_crop_produces_correct_size(self):
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
@@ -105,6 +113,73 @@ class TestInpaintPhase:
         assert "0%" in prompt or "0," in prompt
         assert "seamless" in prompt.lower() or "blend" in prompt.lower()
 
+    def test_repaint_programming_failure_logs_only_safe_category_and_type(
+        self, monkeypatch, tmp_path, caplog
+    ):
+        import asyncio
+        import logging
+        import vulca.providers as providers
+
+        secret = "lower-provider-secret"
+        source = tmp_path / "source.png"
+        source.write_bytes(_png_bytes_for_inpaint())
+
+        class BrokenProvider:
+            async def generate(self, *args, **kwargs):
+                raise RuntimeError(secret)
+
+        monkeypatch.setattr(providers, "get_image_provider", lambda *args, **kwargs: BrokenProvider())
+        caplog.set_level(logging.WARNING, logger="vulca.studio")
+        phase = InpaintPhase()
+
+        with pytest.raises(RuntimeError, match="capability programming error") as caught:
+            asyncio.run(
+                phase.repaint(
+                    str(source),
+                    str(source),
+                    instruction="repair",
+                    count=1,
+                    output_dir=str(tmp_path / "outputs"),
+                )
+            )
+
+        assert secret not in str(caught.value)
+        assert secret not in caplog.text
+
+    def test_repaint_declared_transport_failure_is_typed_and_secret_free(
+        self, monkeypatch, tmp_path, caplog
+    ):
+        import asyncio
+        import logging
+        import vulca.providers as providers
+        from vulca.capability.runtime import CapabilityProviderTransportError
+
+        secret = "lower-transport-secret"
+        source = tmp_path / "source.png"
+        source.write_bytes(_png_bytes_for_inpaint())
+
+        class BrokenProvider:
+            async def generate(self, *args, **kwargs):
+                raise CapabilityProviderTransportError(secret)
+
+        monkeypatch.setattr(providers, "get_image_provider", lambda *args, **kwargs: BrokenProvider())
+        caplog.set_level(logging.WARNING, logger="vulca.studio")
+        phase = InpaintPhase()
+
+        with pytest.raises(CapabilityProviderTransportError) as caught:
+            asyncio.run(
+                phase.repaint(
+                    str(source),
+                    str(source),
+                    instruction="repair",
+                    count=1,
+                    output_dir=str(tmp_path / "outputs"),
+                )
+            )
+
+        assert secret not in str(caught.value)
+        assert secret not in caplog.text
+
 
 class TestInpaintPublicAPI:
     def test_inpaint_importable(self):
@@ -132,6 +207,100 @@ class TestInpaintPublicAPI:
                 )
             except Exception:
                 pass  # Expected — mock inpaint not implemented yet
+
+    def test_inpaint_keeps_supplied_scratch_root_for_coordinate_and_mask(self, tmp_path):
+        import asyncio
+        from vulca.inpaint import ainpaint, inpaint
+
+        source = tmp_path / "source.png"
+        mask = tmp_path / "mask.png"
+        coordinate_root = tmp_path / "coordinate-scratch"
+        mask_root = tmp_path / "mask-scratch"
+        coordinate_root.mkdir()
+        mask_root.mkdir()
+        Image.new("RGB", (64, 48), "green").save(source)
+        Image.new("L", (64, 48), 0).save(mask)
+
+        coordinate = asyncio.run(
+            ainpaint(
+                str(source),
+                region="0,0,50,50",
+                instruction="make it blue",
+                count=1,
+                output_path=str(coordinate_root / "blended.png"),
+                scratch_dir=str(coordinate_root),
+                mock=True,
+            )
+        )
+        assert coordinate_root.exists()
+        assert Path(coordinate.blended).parent == coordinate_root
+        assert all(Path(path).parent == coordinate_root for path in coordinate.variants)
+
+        masked = asyncio.run(
+            ainpaint(
+                str(source),
+                mask_path=str(mask),
+                instruction="make it blue",
+                output_path=str(mask_root / "blended.png"),
+                scratch_dir=str(mask_root),
+                mock=True,
+            )
+        )
+        assert mask_root.exists()
+        assert Path(masked.blended).parent == mask_root
+        assert all(Path(path).parent == mask_root for path in masked.variants)
+
+        sync_root = tmp_path / "sync-scratch"
+        sync_root.mkdir()
+        synchronous = inpaint(
+            str(source),
+            region="0,0,50,50",
+            instruction="make it blue",
+            count=1,
+            output_path=str(sync_root / "blended.png"),
+            scratch_dir=str(sync_root),
+            mock=True,
+        )
+        assert sync_root.exists()
+        assert Path(synchronous.blended).parent == sync_root
+
+    def test_inpaint_rejects_output_outside_supplied_scratch_root(self, monkeypatch, tmp_path):
+        import asyncio
+        from vulca.inpaint import ainpaint
+        from vulca.studio.phases.inpaint import InpaintPhase
+
+        source = tmp_path / "source.png"
+        scratch = tmp_path / "scratch"
+        outside = tmp_path / "outside.png"
+        scratch.mkdir()
+        Image.new("RGB", (64, 48), "green").save(source)
+
+        async def fake_repaint(self, original_path, crop_path, **kwargs):
+            path = Path(kwargs["output_dir"]) / "repaint_v1.png"
+            Image.new("RGB", (32, 24), "blue").save(path)
+            return [str(path)]
+
+        async def fake_blend(self, original_path, repaint_path, **kwargs):
+            output = Path(kwargs["output_path"])
+            Image.new("RGB", (64, 48), "blue").save(output)
+            return str(output)
+
+        monkeypatch.setattr(InpaintPhase, "repaint", fake_repaint)
+        monkeypatch.setattr(InpaintPhase, "blend", fake_blend)
+
+        with pytest.raises(ValueError, match="inside scratch_dir"):
+            asyncio.run(
+                ainpaint(
+                    str(source),
+                    region="0,0,50,50",
+                    instruction="make it blue",
+                    count=1,
+                    output_path=str(outside),
+                    scratch_dir=str(scratch),
+                )
+            )
+        assert not outside.exists()
+        assert scratch.exists()
 
 
 import tempfile
