@@ -37,12 +37,18 @@ jobs:
         # with "Unknown node 'whitespace_analyze'". Headless wheel is ~50MB.
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev,mcp,tools]"
+          pip install -e ".[dev,mcp,tools]" build
       - name: Lint
         # Narrow rule set (E9/F63/F7/F82) per pyproject.toml [tool.ruff.lint].
         # Legacy codebase has 377 violations under default rules; incremental
         # expansion tracked in v0.17.12+.
         run: ruff check src/ tests/
+      - name: Capability type check
+        run: python -m mypy src/vulca/capability
+      - name: Capability tests
+        run: python -m pytest -q tests/test_capability_contract.py tests/test_capability_wheel.py tests/test_capability_builtin.py tests/test_capability_static.py
+      - name: Build wheel
+        run: python -m build --wheel
       - name: Test
         # Ignore-list covers tests that require heavy deps NOT installable on
         # CI's size/time budget — primarily torch (~2GB wheel) and local-only
