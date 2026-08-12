@@ -563,6 +563,18 @@ def _check(status: bool, expected: JsonValue, actual: JsonValue) -> dict[str, Js
     return {"status": "PASS" if status else "FAIL", "expected": expected, "actual": actual}
 
 
+def _safe_area_number(value: object) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    try:
+        normalized = float(value)
+    except (OverflowError, TypeError, ValueError):
+        return None
+    if not math.isfinite(normalized) or not 0 <= normalized < 0.5:
+        return None
+    return normalized
+
+
 def _alpha_present(image: Image.Image) -> bool:
     return "A" in image.getbands() or "transparency" in image.info
 
@@ -645,15 +657,11 @@ class ValidateStaticCapability:
                     if side not in safe_area_value:
                         continue
                     value = safe_area_value[side]
-                    if (
-                        isinstance(value, bool)
-                        or not isinstance(value, (int, float))
-                        or not math.isfinite(float(value))
-                        or not 0 <= float(value) < 0.5
-                    ):
+                    normalized = _safe_area_number(value)
+                    if normalized is None:
                         safe_area_ok = False
                     else:
-                        parsed_safe_area[side] = float(value)
+                        parsed_safe_area[side] = normalized
         checks["safe_area"] = _check(
             safe_area_ok,
             safe_area_expected,

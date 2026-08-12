@@ -183,6 +183,42 @@ class TestInpaintPhase:
         assert secret not in str(caught.value)
         assert secret not in caplog.text
 
+    @pytest.mark.parametrize("exception_type", (RuntimeError, TypeError, OSError))
+    def test_repaint_provider_lookup_programming_errors_preserve_type_without_secret_graph(
+        self, monkeypatch, tmp_path, caplog, exception_type
+    ):
+        import asyncio
+        import logging
+        import vulca.providers as providers
+
+        secret = f"lower-provider-lookup-{exception_type.__name__}-secret"
+        source = tmp_path / "source.png"
+        source.write_bytes(_png_bytes_for_inpaint())
+
+        def fail_provider_lookup(*args, **kwargs):
+            raise exception_type(secret)
+
+        monkeypatch.setattr(providers, "get_image_provider", fail_provider_lookup)
+        caplog.set_level(logging.WARNING, logger="vulca.studio")
+        phase = InpaintPhase()
+
+        with pytest.raises(exception_type, match="^capability programming error$") as caught:
+            asyncio.run(
+                phase.repaint(
+                    str(source),
+                    str(source),
+                    instruction="repair",
+                    count=1,
+                    output_dir=str(tmp_path / "outputs"),
+                )
+            )
+
+        assert caught.value.__cause__ is None
+        assert caught.value.__context__ is None
+        assert secret not in str(caught.value)
+        assert secret not in repr(caught.value)
+        assert secret not in caplog.text
+
     def test_repaint_declared_transport_failure_is_typed_and_secret_free(
         self, monkeypatch, tmp_path, caplog
     ):

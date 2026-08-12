@@ -99,6 +99,12 @@ def _validate_finite_json(value: object, field_name: str) -> None:
     raise ValueError(f"{field_name} must contain only finite JSON values")
 
 
+def _validate_json_object(value: object, field_name: str) -> None:
+    if not isinstance(value, dict):
+        raise ValueError(f"{field_name} must be a dict")
+    _validate_finite_json(value, field_name)
+
+
 def _credential_key_path(value: object, path: str) -> str | None:
     if isinstance(value, dict):
         for key, nested in value.items():
@@ -136,7 +142,7 @@ class CapabilityInvocation:
         _validate_non_empty_identity("capability_version", self.capability_version)
 
         for field_name, value in (("inputs", self.inputs), ("options", self.options)):
-            _validate_finite_json(value, field_name)
+            _validate_json_object(value, field_name)
             credential_path = _credential_key_path(value, field_name)
             if credential_path is not None:
                 raise ValueError(f"{field_name} contains credential-bearing key at {credential_path}")
@@ -175,7 +181,7 @@ class CapabilityResult:
 
     def __post_init__(self) -> None:
         for field_name, value in (("output", self.output), ("provider_receipt", self.provider_receipt)):
-            _validate_finite_json(value, field_name)
+            _validate_json_object(value, field_name)
             credential_path = _credential_key_path(value, field_name)
             if credential_path is not None:
                 raise ValueError(f"{field_name} contains credential-bearing key at {credential_path}")

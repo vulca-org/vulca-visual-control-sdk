@@ -309,6 +309,31 @@ def test_invocation_allows_binding_refs_and_non_secret_controls() -> None:
 
 @pytest.mark.parametrize("location", ("inputs", "options"))
 @pytest.mark.parametrize(
+    "invalid_root",
+    (
+        pytest.param([], id="list"),
+        pytest.param("not-a-mapping", id="string"),
+        pytest.param(None, id="none"),
+    ),
+)
+def test_invocation_rejects_non_dict_root_fields(
+    location: str,
+    invalid_root: object,
+) -> None:
+    values: dict[str, object] = {"inputs": {}, "options": {}}
+    values[location] = invalid_root
+
+    with pytest.raises(ValueError, match=rf"^{location} must be a dict$"):
+        CapabilityInvocation(
+            invocation_id="inv_test",
+            capability_id="test.echo",
+            capability_version="1.0.0",
+            **values,
+        )
+
+
+@pytest.mark.parametrize("location", ("inputs", "options"))
+@pytest.mark.parametrize(
     "invalid",
     (
         pytest.param(float("nan"), id="nan"),
@@ -372,6 +397,35 @@ def test_result_allows_unknown_side_effect_state_only_for_failure() -> None:
     )
 
     assert result.side_effect_state is SideEffectState.UNKNOWN
+
+
+@pytest.mark.parametrize("location", ("output", "provider_receipt"))
+@pytest.mark.parametrize(
+    "invalid_root",
+    (
+        pytest.param([], id="list"),
+        pytest.param("not-a-mapping", id="string"),
+        pytest.param(None, id="none"),
+    ),
+)
+def test_result_rejects_non_dict_root_fields(
+    location: str,
+    invalid_root: object,
+) -> None:
+    values: dict[str, object] = {"output": {}, "provider_receipt": {}}
+    values[location] = invalid_root
+
+    with pytest.raises(ValueError, match=rf"^{location} must be a dict$"):
+        CapabilityResult(
+            invocation_id="inv_test",
+            status=CapabilityStatus.SUCCEEDED,
+            side_effect_state=SideEffectState.COMPLETED,
+            artifacts=(),
+            latency_ms=0,
+            cost_minor=0,
+            currency="USD",
+            **values,
+        )
 
 
 @pytest.mark.parametrize("location", ("output", "provider_receipt"))

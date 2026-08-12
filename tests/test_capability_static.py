@@ -597,3 +597,38 @@ def test_validate_safe_area_echoes_only_allowlisted_finite_numeric_fields() -> N
     assert check["expected"] == {"top": 0.1}
     assert secret not in repr(result)
     json.dumps(result.output, allow_nan=False)
+
+
+@pytest.mark.parametrize("overflowing_value", (10**1000, -(10**1000)))
+def test_validate_safe_area_overflow_is_structured_and_never_echoed(
+    overflowing_value: int,
+) -> None:
+    import asyncio
+
+    result = asyncio.run(
+        ValidateStaticCapability().invoke(
+            _invocation(
+                "vulca.image.validate_static",
+                {
+                    "artifact": _raw_b64(_png_bytes()),
+                    "safe_area": {
+                        "top": overflowing_value,
+                        "left": 0.1,
+                        "internal": {"note": "unknown nested value"},
+                    },
+                },
+            )
+        )
+    )
+
+    assert result.status is CapabilityStatus.SUCCEEDED
+    assert result.output["validation_status"] == "FAIL"
+    check = result.output["checks"]["safe_area"]
+    assert check == {
+        "status": "FAIL",
+        "expected": {"left": 0.1},
+        "actual": "invalid",
+    }
+    assert str(abs(overflowing_value)) not in repr(result)
+    assert "unknown nested value" not in repr(result)
+    json.dumps(result.output, allow_nan=False)

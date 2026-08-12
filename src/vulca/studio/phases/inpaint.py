@@ -16,6 +16,7 @@ from vulca.capability.runtime import (
     CapabilityProviderUnsupportedError,
     raise_capability_programming_error,
     raise_sanitized_exception,
+    sanitized_capability_programming_exception,
 )
 
 logger = logging.getLogger("vulca.studio")
@@ -148,10 +149,15 @@ class InpaintPhase:
         # Pass api_key only when the caller supplied one; otherwise let each
         # provider resolve its own env var (OPENAI_API_KEY, GOOGLE_API_KEY, …).
         provider_kwargs = {"api_key": api_key} if api_key else {}
+        safe_exception: Exception | None = None
         try:
             provider_inst = get_image_provider(provider, **provider_kwargs)
         except ValueError:
-            raise_sanitized_exception(CapabilityProviderConstructionError())
+            safe_exception = CapabilityProviderConstructionError()
+        except Exception as exception:
+            safe_exception = sanitized_capability_programming_exception(exception)
+        if safe_exception is not None:
+            raise_sanitized_exception(safe_exception)
         out_dir = Path(output_dir) if output_dir else Path(original_path).parent
         out_dir.mkdir(parents=True, exist_ok=True)
 

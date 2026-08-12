@@ -986,6 +986,34 @@ def test_runtime_construction_boundary_drops_raw_exception_context(
     assert secret not in caplog.text
 
 
+@pytest.mark.parametrize("exception_type", (RuntimeError, TypeError, OSError))
+def test_runtime_provider_lookup_programming_errors_preserve_type_without_secret_graph(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    exception_type: type[Exception],
+) -> None:
+    secret = f"provider-lookup-{exception_type.__name__}-secret"
+
+    def fail_provider_lookup(*args: object, **kwargs: object) -> object:
+        raise exception_type(secret)
+
+    monkeypatch.setattr(runtime_module, "get_image_provider", fail_provider_lookup)
+    caplog.set_level(logging.DEBUG)
+
+    with pytest.raises(exception_type, match="^capability programming error$") as caught:
+        EnvironmentCapabilityRuntime().image_provider(
+            provider_name="broken",
+            binding_ref="binding:broken",
+            constructor_options={},
+        )
+
+    assert caught.value.__cause__ is None
+    assert caught.value.__context__ is None
+    assert secret not in str(caught.value)
+    assert secret not in repr(caught.value)
+    assert secret not in caplog.text
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("boundary_type", "error_code"),

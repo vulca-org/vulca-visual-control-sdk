@@ -62,13 +62,17 @@ def raise_sanitized_exception(exception: Exception) -> NoReturn:
         raise
 
 
+def sanitized_capability_programming_exception(exception: Exception) -> Exception:
+    """Build a fresh, fixed-message exception while preserving its category."""
+    try:
+        return type(exception)("capability programming error")
+    except Exception:
+        return RuntimeError("capability programming error")
+
+
 def raise_capability_programming_error(exception: Exception) -> NoReturn:
     """Preserve a programming-error category with a fixed, secret-free graph."""
-    try:
-        replacement = type(exception)("capability programming error")
-    except Exception:
-        replacement = RuntimeError("capability programming error")
-    raise_sanitized_exception(replacement)
+    raise_sanitized_exception(sanitized_capability_programming_exception(exception))
 
 
 class CapabilityRuntime(Protocol):
@@ -120,9 +124,13 @@ class EnvironmentCapabilityRuntime:
             return get_image_provider(provider_name, **options)
         except ValueError:
             # The provider registry uses ValueError for unknown providers and
-            # known constructor/configuration rejection.  Do not broaden this
-            # boundary to TypeError, OSError, or arbitrary exceptions.
-            raise_sanitized_exception(CapabilityProviderConstructionError())
+            # known constructor/configuration rejection.
+            safe_exception: Exception = CapabilityProviderConstructionError()
+        except Exception as exception:
+            # Unexpected constructor programming failures preserve their type;
+            # they are sanitized, not reclassified as provider failures.
+            safe_exception = sanitized_capability_programming_exception(exception)
+        raise_sanitized_exception(safe_exception)
 
     def api_key(self, *, binding_ref: str) -> str:
         env_name = _binding_env_name(binding_ref)
@@ -142,4 +150,5 @@ __all__ = [
     "CapabilityProviderUnsupportedError",
     "raise_capability_programming_error",
     "raise_sanitized_exception",
+    "sanitized_capability_programming_exception",
 ]
