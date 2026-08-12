@@ -37,7 +37,10 @@ jobs:
         # with "Unknown node 'whitespace_analyze'". Headless wheel is ~50MB.
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev,mcp,tools]" build
+          python -m pip install "build==1.4.3" "hatchling==1.31.0"
+          python -m pip install -e ".[dev,mcp,tools]"
+      - name: Dependency check
+        run: python -m pip check
       - name: Lint
         # Narrow rule set (E9/F63/F7/F82) per pyproject.toml [tool.ruff.lint].
         # Legacy codebase has 377 violations under default rules; incremental
@@ -45,10 +48,8 @@ jobs:
         run: ruff check src/ tests/
       - name: Capability type check
         run: python -m mypy src/vulca/capability
-      - name: Capability tests
+      - name: Capability release gate
         run: python -m pytest -q tests/test_capability_contract.py tests/test_capability_wheel.py tests/test_capability_builtin.py tests/test_capability_static.py
-      - name: Build wheel
-        run: python -m build --wheel
       - name: Test
         # Ignore-list covers tests that require heavy deps NOT installable on
         # CI's size/time budget — primarily torch (~2GB wheel) and local-only
@@ -58,6 +59,10 @@ jobs:
         # Remove entries as underlying issues are fixed in v0.17.12+ (see task #28).
         run: |
           pytest tests/ \
+            --ignore=tests/test_capability_contract.py \
+            --ignore=tests/test_capability_wheel.py \
+            --ignore=tests/test_capability_builtin.py \
+            --ignore=tests/test_capability_static.py \
             --ignore=tests/test_cli_layers_retry.py \
             --ignore=tests/test_layered_mock_fallback.py \
             --ignore=tests/test_layered_partial_e2e.py \
