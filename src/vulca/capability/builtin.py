@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Mapping, NoReturn, cast
+from typing import Mapping, cast
 
 from vulca.evaluate import aevaluate
 from vulca.inpaint import ainpaint
@@ -34,6 +34,7 @@ from .runtime import (
     CapabilityProviderUnsupportedError,
     CapabilityRuntime,
     EnvironmentCapabilityRuntime,
+    raise_capability_programming_error,
 )
 from .types import (
     Capability,
@@ -45,6 +46,7 @@ from .types import (
     CapabilityStatus,
     JsonValue,
     SideEffectState,
+    _is_credential_key,
     sha256_bytes,
 )
 
@@ -103,13 +105,11 @@ class _InputBytes:
     source_path: Path | None
 
 
-def _rethrow_programming(exc: Exception) -> NoReturn:
-    """Preserve an exception category without retaining provider text."""
-    try:
-        replacement = type(exc)("capability programming error")
-    except Exception:
-        replacement = RuntimeError("capability programming error")
-    raise replacement from None
+@dataclass(frozen=True)
+class _ImageInspection:
+    media_type: str
+    size: tuple[int, int]
+    mode: str
 
 
 def _manifest(
@@ -314,6 +314,30 @@ def _mime_from_bytes(data: bytes) -> str:
     return ""
 
 
+def _inspect_image(data: bytes) -> _ImageInspection | None:
+    try:
+        from PIL import Image
+
+        with Image.open(BytesIO(data)) as image:
+            image_format = image.format
+            image.verify()
+        with Image.open(BytesIO(data)) as image:
+            image.load()
+            media_type = Image.MIME.get(image_format or "", "").lower()
+            return _ImageInspection(media_type=media_type, size=image.size, mode=image.mode)
+    except (OSError, TypeError, ValueError, SyntaxError):
+        return None
+
+
+def _require_supported_image(data: bytes) -> _ImageInspection:
+    inspection = _inspect_image(data)
+    if inspection is None:
+        raise _PreflightFailure("CORRUPT_ARTIFACT")
+    if inspection.media_type not in _IMAGE_MIME_TYPES:
+        raise _PreflightFailure("INVALID_MEDIA_TYPE")
+    return inspection
+
+
 def _image_size(data: bytes, *, code: str = "CORRUPT_ARTIFACT") -> tuple[int, int]:
     try:
         from PIL import Image
@@ -380,41 +404,17 @@ def _artifact_name(inputs: Mapping[str, JsonValue], default: str) -> str:
 def _reference_b64(value: object, options: Mapping[str, JsonValue]) -> str:
     if value is None:
         return ""
-    if not isinstance(value, str) or not value.strip():
-        raise _PreflightFailure("INVALID_INPUT")
-    candidate = Path(value).expanduser()
-    try:
-        is_file = candidate.is_file()
-    except (OSError, RuntimeError, ValueError):
-        is_file = False
-    if is_file:
-        return base64.b64encode(_read_input(value, options).data).decode("ascii")
-    if _looks_like_path(value):
-        _authorise_path(candidate, options)
-        raise _PreflightFailure("MISSING_INPUT")
-    if value.strip().startswith("data:"):
-        data = _decode_base64(value)
-        return base64.b64encode(data).decode("ascii")
-    _decode_base64(value)
-    return value.strip()
+    source = _read_input(value, options)
+    _require_supported_image(source.data)
+    return base64.b64encode(source.data).decode("ascii")
 
 
 def _image_argument(value: object, options: Mapping[str, JsonValue]) -> str:
-    if not isinstance(value, str) or not value.strip():
-        raise _PreflightFailure("INVALID_INPUT")
-    candidate = Path(value).expanduser()
-    try:
-        is_file = candidate.is_file()
-    except (OSError, RuntimeError, ValueError):
-        is_file = False
-    if is_file:
-        return str(_authorise_path(candidate, options))
-    if _looks_like_path(value):
-        _authorise_path(candidate, options)
-        raise _PreflightFailure("MISSING_INPUT")
-    data = _decode_base64(value)
-    mime = _mime_from_bytes(data) or "image/png"
-    return f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}"
+    source = _read_input(value, options)
+    inspection = _require_supported_image(source.data)
+    if source.source_path is not None:
+        return str(source.source_path)
+    return f"data:{inspection.media_type};base64,{base64.b64encode(source.data).decode('ascii')}"
 
 
 def _cleanup_edit_root(owned_root: Path) -> None:
@@ -499,9 +499,11 @@ def _json_safe(value: object, *, secret: str = "") -> JsonValue:
         for key, nested in value.items():
             if not isinstance(key, str):
                 raise _PostflightFailure("INVALID_EVALUATION_RESULT")
+            if _is_credential_key(key):
+                raise _PostflightFailure("INVALID_EVALUATION_RESULT")
             safe[_redact_string(key, secret)] = _json_safe(nested, secret=secret)
         return safe
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, list):
         return [_json_safe(nested, secret=secret) for nested in value]
     raise _PostflightFailure("INVALID_EVALUATION_RESULT")
 
@@ -586,7 +588,7 @@ class GenerateImageCapability:
                 start=start,
             )
         except Exception as exc:
-            _rethrow_programming(exc)
+            raise_capability_programming_error(exc)
 
         try:
             provider: ImageProvider = self.runtime.image_provider(
@@ -613,7 +615,7 @@ class GenerateImageCapability:
                 start=start,
             )
         except Exception as exc:
-            _rethrow_programming(exc)
+            raise_capability_programming_error(exc)
 
         try:
             result = await provider.generate(
@@ -651,7 +653,7 @@ class GenerateImageCapability:
         except CapabilityProviderUnsupportedError:
             return _failed(invocation, code="PROVIDER_UNSUPPORTED", state=SideEffectState.UNKNOWN, start=start)
         except Exception as exc:
-            _rethrow_programming(exc)
+            raise_capability_programming_error(exc)
 
         try:
             image_b64 = getattr(result, "image_b64")
@@ -665,6 +667,15 @@ class GenerateImageCapability:
                 if normalized_mime != _OUTPUT_FORMAT_MIMES[output_format.lower()]:
                     raise _PostflightFailure("INVALID_MEDIA_TYPE")
             image_bytes = _decode_base64(image_b64)
+            inspection = _inspect_image(image_bytes)
+            if inspection is None:
+                raise _PostflightFailure("CORRUPT_ARTIFACT")
+            if inspection.media_type not in _IMAGE_MIME_TYPES:
+                raise _PostflightFailure("INVALID_MEDIA_TYPE")
+            if inspection.media_type != normalized_mime:
+                raise _PostflightFailure("INVALID_MEDIA_TYPE")
+            if output_format and inspection.media_type != _OUTPUT_FORMAT_MIMES[output_format.lower()]:
+                raise _PostflightFailure("INVALID_MEDIA_TYPE")
             metadata_value = getattr(result, "metadata", None)
             metadata: Mapping[str, object] = metadata_value if isinstance(metadata_value, dict) else {}
             cost_minor, cost_known = _cost_minor(metadata.get("cost_usd"))
@@ -701,7 +712,7 @@ class GenerateImageCapability:
         except (_PostflightFailure, _PreflightFailure) as failure:
             return _failed(invocation, code=failure.code, state=SideEffectState.UNKNOWN, start=start)
         except Exception as exc:
-            _rethrow_programming(exc)
+            raise_capability_programming_error(exc)
 
 
 class EditImageCapability:
@@ -798,7 +809,7 @@ class EditImageCapability:
             )
         except Exception as exc:
             _cleanup_edit_root(owned_root)
-            _rethrow_programming(exc)
+            raise_capability_programming_error(exc)
 
         try:
             result = await ainpaint(
@@ -835,7 +846,7 @@ class EditImageCapability:
             )
         except Exception as exc:
             _cleanup_edit_root(owned_root)
-            _rethrow_programming(exc)
+            raise_capability_programming_error(exc)
 
         try:
             selected_path = _selected_output_path(result, owned_root)
@@ -878,7 +889,7 @@ class EditImageCapability:
         except _PostflightFailure as failure:
             return _failed(invocation, code=failure.code, state=SideEffectState.UNKNOWN, start=start)
         except Exception as exc:
-            _rethrow_programming(exc)
+            raise_capability_programming_error(exc)
         finally:
             _cleanup_edit_root(owned_root)
 
@@ -942,7 +953,7 @@ class EvaluateImageCapability:
                 start=start,
             )
         except Exception as exc:
-            _rethrow_programming(exc)
+            raise_capability_programming_error(exc)
 
         try:
             result = await aevaluate(
@@ -975,7 +986,7 @@ class EvaluateImageCapability:
         except CapabilityProviderUnsupportedError:
             return _failed(invocation, code="PROVIDER_UNSUPPORTED", state=SideEffectState.NOT_STARTED, start=start)
         except Exception as exc:
-            _rethrow_programming(exc)
+            raise_capability_programming_error(exc)
 
         try:
             output = _evaluation_output(result, secret=api_key)
@@ -1014,7 +1025,7 @@ class EvaluateImageCapability:
         except _PostflightFailure as failure:
             return _failed(invocation, code=failure.code, state=SideEffectState.UNKNOWN, start=start)
         except Exception as exc:
-            _rethrow_programming(exc)
+            raise_capability_programming_error(exc)
 
 
 def _evaluation_output(result: EvalResult | dict, *, secret: str = "") -> dict[str, JsonValue]:

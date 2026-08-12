@@ -23,6 +23,7 @@ from vulca.providers.base import ImageResult
 from vulca.types import EvalResult
 
 from vulca.capability import builtin as builtin_module
+from vulca.capability import runtime as runtime_module
 from vulca.capability.builtin import (
     EditImageCapability,
     EvaluateImageCapability,
@@ -34,6 +35,7 @@ from vulca.capability.runtime import (
     CapabilityProviderTimeoutError,
     CapabilityProviderTransportError,
     CapabilityProviderUnsupportedError,
+    EnvironmentCapabilityRuntime,
 )
 
 
@@ -124,6 +126,16 @@ def _png_bytes(
     return buffer.getvalue()
 
 
+def _jpeg_bytes(size: tuple[int, int] = (32, 24)) -> bytes:
+    from io import BytesIO
+
+    from PIL import Image
+
+    buffer = BytesIO()
+    Image.new("RGB", size, (31, 62, 93)).save(buffer, format="JPEG")
+    return buffer.getvalue()
+
+
 def test_builtin_registry_exposes_exact_first_jobclass_cells() -> None:
     registry = builtin_registry(runtime=FakeCapabilityRuntime())
 
@@ -181,10 +193,11 @@ def test_builtin_registry_exposes_exact_first_jobclass_cells() -> None:
 
 @pytest.mark.asyncio
 async def test_generate_adapter_returns_hashed_artifact_and_calls_provider_once() -> None:
+    generated_bytes = _png_bytes()
     provider = SimpleNamespace(
         generate=AsyncMock(
             return_value=ImageResult(
-                image_b64=base64.b64encode(b"png-bytes").decode("ascii"),
+                image_b64=base64.b64encode(generated_bytes).decode("ascii"),
                 mime="image/png",
                 metadata={
                     "provider": "mock",
@@ -202,10 +215,8 @@ async def test_generate_adapter_returns_hashed_artifact_and_calls_provider_once(
 
     assert result.status is CapabilityStatus.SUCCEEDED
     assert result.side_effect_state is SideEffectState.COMPLETED
-    assert result.artifacts[0].content == b"png-bytes"
-    assert result.artifacts[0].sha256 == (
-        "ea80334363eed145dfeee51ebae7dc3f1cd7d0c7879f8bfd2070c061d3c33f56"
-    )
+    assert result.artifacts[0].content == generated_bytes
+    assert result.artifacts[0].sha256 == "1e6a203ef9b5909254d20328a60d90d4085623a8f4f176068cdfe4a8c7bef3db"
     assert result.cost_minor == 4
     assert result.provider_receipt["provider"] == "mock"
     assert result.provider_receipt["model"] == "mock-v1"
@@ -236,7 +247,7 @@ async def test_generate_cost_rounds_half_up_and_absent_cost_is_unknown() -> None
         provider = SimpleNamespace(
             generate=AsyncMock(
                 return_value=ImageResult(
-                    image_b64=base64.b64encode(b"bytes").decode("ascii"),
+                    image_b64=base64.b64encode(_png_bytes()).decode("ascii"),
                     mime="image/png",
                     metadata=metadata,
                 )
@@ -257,7 +268,7 @@ async def test_generate_never_calls_legacy_create_or_evaluate(
     provider = SimpleNamespace(
         generate=AsyncMock(
             return_value=ImageResult(
-                image_b64=base64.b64encode(b"bytes").decode("ascii"),
+                image_b64=base64.b64encode(_png_bytes()).decode("ascii"),
                 mime="image/png",
             )
         )
@@ -337,6 +348,50 @@ async def test_empty_generation_is_not_reported_as_success() -> None:
 
 
 @pytest.mark.asyncio
+async def test_generate_rejects_corrupt_declared_png_without_artifact() -> None:
+    provider = SimpleNamespace(
+        generate=AsyncMock(
+            return_value=ImageResult(
+                image_b64=base64.b64encode(b"not-a-real-image").decode("ascii"),
+                mime="image/png",
+            )
+        )
+    )
+
+    result = await GenerateImageCapability(
+        runtime=FakeCapabilityRuntime(provider=provider)
+    ).invoke(_generate_invocation())
+
+    assert result.status is CapabilityStatus.FAILED
+    assert result.side_effect_state is SideEffectState.UNKNOWN
+    assert result.error_code == "CORRUPT_ARTIFACT"
+    assert result.artifacts == ()
+    provider.generate.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_generate_rejects_actual_image_mime_mismatch_without_artifact() -> None:
+    provider = SimpleNamespace(
+        generate=AsyncMock(
+            return_value=ImageResult(
+                image_b64=base64.b64encode(_jpeg_bytes()).decode("ascii"),
+                mime="image/png",
+            )
+        )
+    )
+
+    result = await GenerateImageCapability(
+        runtime=FakeCapabilityRuntime(provider=provider)
+    ).invoke(_generate_invocation())
+
+    assert result.status is CapabilityStatus.FAILED
+    assert result.side_effect_state is SideEffectState.UNKNOWN
+    assert result.error_code == "INVALID_MEDIA_TYPE"
+    assert result.artifacts == ()
+    provider.generate.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_empty_edit_is_not_reported_as_success(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -379,6 +434,7 @@ async def test_programming_errors_propagate_sanitized_by_type() -> None:
             runtime=FakeCapabilityRuntime(provider=provider)
         ).invoke(_generate_invocation())
     assert caught.value.__cause__ is None
+    assert caught.value.__context__ is None
 
 
 @pytest.mark.asyncio
@@ -610,6 +666,31 @@ async def test_evaluate_maps_path_or_base64_to_json_safe_output(
 
 
 @pytest.mark.asyncio
+async def test_evaluate_rejects_corrupt_base64_before_evaluator_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    evaluator = AsyncMock()
+    monkeypatch.setattr(builtin_module, "aevaluate", evaluator)
+
+    result = await EvaluateImageCapability(runtime=FakeCapabilityRuntime()).invoke(
+        _invocation(
+            "vulca.image.evaluate",
+            {
+                "image": base64.b64encode(b"not-a-real-image").decode("ascii"),
+                "intent": "assess",
+            },
+            options={"binding_ref": "binding:vlm"},
+        )
+    )
+
+    assert result.status is CapabilityStatus.FAILED
+    assert result.side_effect_state is SideEffectState.NOT_STARTED
+    assert result.error_code == "CORRUPT_ARTIFACT"
+    assert result.artifacts == ()
+    evaluator.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_evaluate_provider_timeout_is_unknown(monkeypatch: pytest.MonkeyPatch) -> None:
     async def fake_aevaluate(image, **kwargs):
         raise TimeoutError("evaluation test-secret")
@@ -617,7 +698,7 @@ async def test_evaluate_provider_timeout_is_unknown(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(builtin_module, "aevaluate", fake_aevaluate)
     invocation = _invocation(
         "vulca.image.evaluate",
-        {"image": base64.b64encode(b"image").decode("ascii"), "intent": "assess"},
+        {"image": base64.b64encode(_png_bytes()).decode("ascii"), "intent": "assess"},
         options={"binding_ref": "binding:vlm"},
     )
 
@@ -642,11 +723,12 @@ async def test_evaluate_programming_errors_propagate(monkeypatch: pytest.MonkeyP
         await EvaluateImageCapability(runtime=FakeCapabilityRuntime()).invoke(
             _invocation(
                 "vulca.image.evaluate",
-                {"image": base64.b64encode(b"image").decode("ascii"), "intent": "assess"},
+                {"image": base64.b64encode(_png_bytes()).decode("ascii"), "intent": "assess"},
                 options={"binding_ref": "binding:vlm"},
             )
         )
     assert caught.value.__cause__ is None
+    assert caught.value.__context__ is None
 
 
 def _edit_invocation_for_source(source: Path, *, invocation_id: str = "inv_edit_c1") -> CapabilityInvocation:
@@ -842,6 +924,7 @@ async def test_unexpected_provider_errors_preserve_type_but_sanitize_all_adapter
             _generate_invocation()
         )
     assert generate_error.value.__cause__ is None
+    assert generate_error.value.__context__ is None
     assert secret not in repr(generate_error.value)
 
     source = tmp_path / "source.png"
@@ -856,6 +939,7 @@ async def test_unexpected_provider_errors_preserve_type_but_sanitize_all_adapter
             _edit_invocation_for_source(source, invocation_id=f"inv_edit_{exception_type.__name__}")
         )
     assert edit_error.value.__cause__ is None
+    assert edit_error.value.__context__ is None
     assert secret not in repr(edit_error.value)
 
     async def bad_aevaluate(image: str, **kwargs: object) -> object:
@@ -872,7 +956,33 @@ async def test_unexpected_provider_errors_preserve_type_but_sanitize_all_adapter
             )
         )
     assert evaluate_error.value.__cause__ is None
+    assert evaluate_error.value.__context__ is None
     assert secret not in repr(evaluate_error.value)
+    assert secret not in caplog.text
+
+
+def test_runtime_construction_boundary_drops_raw_exception_context(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    secret = "provider-construction-context-secret"
+
+    def fail_provider_lookup(*args: object, **kwargs: object) -> object:
+        raise ValueError(secret)
+
+    monkeypatch.setattr(runtime_module, "get_image_provider", fail_provider_lookup)
+    caplog.set_level(logging.DEBUG)
+
+    with pytest.raises(CapabilityProviderConstructionError) as caught:
+        EnvironmentCapabilityRuntime().image_provider(
+            provider_name="broken",
+            binding_ref="binding:broken",
+            constructor_options={},
+        )
+
+    assert caught.value.__cause__ is None
+    assert caught.value.__context__ is None
+    assert secret not in str(caught.value)
     assert secret not in caplog.text
 
 
@@ -1031,7 +1141,7 @@ async def test_generation_receipt_redacts_secret_echoes_from_provider_metadata()
     provider = SimpleNamespace(
         generate=AsyncMock(
             return_value=ImageResult(
-                image_b64=base64.b64encode(b"provider-bytes").decode("ascii"),
+                image_b64=base64.b64encode(_png_bytes()).decode("ascii"),
                 mime="image/png",
                 metadata={
                     "provider": f"provider-{secret}",
@@ -1090,6 +1200,82 @@ async def test_evaluation_output_redacts_secret_echoes_in_summary_rationale_and_
     assert secret not in repr(result.output)
     assert secret not in repr(result.provider_receipt)
     assert "[REDACTED]" in repr(result.output)
+
+
+@pytest.mark.asyncio
+async def test_evaluation_rejects_nested_credential_keys_without_secret_echo(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    secret = "nested-evaluator-secret"
+
+    async def fake_aevaluate(image: str, **kwargs: object) -> EvalResult:
+        return EvalResult(
+            score=0.8,
+            tradition="default",
+            dimensions={"L1": 0.8},
+            rationales={"L1": {"api_key": secret}},  # type: ignore[dict-item]
+            summary="summary",
+            risk_level="low",
+            risk_flags=[],
+            recommendations=[],
+            latency_ms=1,
+            cost_usd=0.01,
+            raw={},
+        )
+
+    monkeypatch.setattr(builtin_module, "aevaluate", fake_aevaluate)
+    caplog.set_level(logging.DEBUG)
+    result = await EvaluateImageCapability(
+        runtime=FakeCapabilityRuntime(api_key=secret)
+    ).invoke(
+        _invocation(
+            "vulca.image.evaluate",
+            {"image": base64.b64encode(_png_bytes()).decode("ascii"), "intent": "assess"},
+            options={"binding_ref": "binding:vlm"},
+        )
+    )
+
+    assert result.status is CapabilityStatus.FAILED
+    assert result.side_effect_state is SideEffectState.UNKNOWN
+    assert result.error_code == "INVALID_EVALUATION_RESULT"
+    assert secret not in repr(result)
+    assert secret not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_evaluation_preserves_normal_creative_text_that_mentions_secrets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_aevaluate(image: str, **kwargs: object) -> EvalResult:
+        return EvalResult(
+            score=0.8,
+            tradition="default",
+            dimensions={"L1": 0.8},
+            rationales={"L1": "A secret garden is the visual metaphor."},
+            summary="The secret garden remains legible.",
+            risk_level="low",
+            risk_flags=[],
+            recommendations=["Keep the secret garden motif."],
+            latency_ms=1,
+            cost_usd=0.01,
+            raw={},
+        )
+
+    monkeypatch.setattr(builtin_module, "aevaluate", fake_aevaluate)
+    result = await EvaluateImageCapability(
+        runtime=FakeCapabilityRuntime(api_key="actual-binding-token")
+    ).invoke(
+        _invocation(
+            "vulca.image.evaluate",
+            {"image": base64.b64encode(_png_bytes()).decode("ascii"), "intent": "assess"},
+            options={"binding_ref": "binding:vlm"},
+        )
+    )
+
+    assert result.status is CapabilityStatus.SUCCEEDED
+    assert result.output["summary"] == "The secret garden remains legible."
+    assert result.output["rationales"]["L1"] == "A secret garden is the visual metaphor."
 
 
 @pytest.mark.asyncio

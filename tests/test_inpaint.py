@@ -144,6 +144,43 @@ class TestInpaintPhase:
             )
 
         assert secret not in str(caught.value)
+        assert caught.value.__cause__ is None
+        assert caught.value.__context__ is None
+        assert secret not in caplog.text
+
+    def test_repaint_construction_failure_drops_raw_exception_context(
+        self, monkeypatch, tmp_path, caplog
+    ):
+        import asyncio
+        import logging
+        import vulca.providers as providers
+        from vulca.capability.runtime import CapabilityProviderConstructionError
+
+        secret = "lower-construction-context-secret"
+        source = tmp_path / "source.png"
+        source.write_bytes(_png_bytes_for_inpaint())
+
+        def fail_provider_lookup(*args, **kwargs):
+            raise ValueError(secret)
+
+        monkeypatch.setattr(providers, "get_image_provider", fail_provider_lookup)
+        caplog.set_level(logging.WARNING, logger="vulca.studio")
+        phase = InpaintPhase()
+
+        with pytest.raises(CapabilityProviderConstructionError) as caught:
+            asyncio.run(
+                phase.repaint(
+                    str(source),
+                    str(source),
+                    instruction="repair",
+                    count=1,
+                    output_dir=str(tmp_path / "outputs"),
+                )
+            )
+
+        assert caught.value.__cause__ is None
+        assert caught.value.__context__ is None
+        assert secret not in str(caught.value)
         assert secret not in caplog.text
 
     def test_repaint_declared_transport_failure_is_typed_and_secret_free(
@@ -178,6 +215,8 @@ class TestInpaintPhase:
             )
 
         assert secret not in str(caught.value)
+        assert caught.value.__cause__ is None
+        assert caught.value.__context__ is None
         assert secret not in caplog.text
 
 

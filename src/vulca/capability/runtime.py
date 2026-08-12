@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Mapping, Protocol
+from typing import Mapping, NoReturn, Protocol
 
 from vulca.providers import ImageProvider, get_image_provider
 
@@ -49,6 +49,26 @@ class CapabilityProviderUnsupportedError(_CapabilityProviderBoundaryError):
     """A provider or operation is explicitly unsupported."""
 
     safe_message = "capability provider operation unsupported"
+
+
+def raise_sanitized_exception(exception: Exception) -> NoReturn:
+    """Raise an already-sanitized exception without retaining caught context."""
+    try:
+        raise exception from None
+    except Exception as sanitized:
+        sanitized.__context__ = None
+        sanitized.__cause__ = None
+        sanitized.__suppress_context__ = True
+        raise
+
+
+def raise_capability_programming_error(exception: Exception) -> NoReturn:
+    """Preserve a programming-error category with a fixed, secret-free graph."""
+    try:
+        replacement = type(exception)("capability programming error")
+    except Exception:
+        replacement = RuntimeError("capability programming error")
+    raise_sanitized_exception(replacement)
 
 
 class CapabilityRuntime(Protocol):
@@ -102,7 +122,7 @@ class EnvironmentCapabilityRuntime:
             # The provider registry uses ValueError for unknown providers and
             # known constructor/configuration rejection.  Do not broaden this
             # boundary to TypeError, OSError, or arbitrary exceptions.
-            raise CapabilityProviderConstructionError() from None
+            raise_sanitized_exception(CapabilityProviderConstructionError())
 
     def api_key(self, *, binding_ref: str) -> str:
         env_name = _binding_env_name(binding_ref)
@@ -120,4 +140,6 @@ __all__ = [
     "CapabilityProviderTransportError",
     "CapabilityProviderTimeoutError",
     "CapabilityProviderUnsupportedError",
+    "raise_capability_programming_error",
+    "raise_sanitized_exception",
 ]

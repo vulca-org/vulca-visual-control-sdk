@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 from io import BytesIO
+import json
 from pathlib import Path
 
 import pytest
@@ -520,3 +521,79 @@ def test_validate_fails_unknown_actual_mime_even_without_expected_mime() -> None
     assert result.status is CapabilityStatus.SUCCEEDED
     assert result.output["validation_status"] == "FAIL"
     assert result.output["checks"]["media_type"]["status"] == "FAIL"
+
+
+@pytest.mark.parametrize("mode", ("RGB", "RGBA", "L", "P"))
+def test_validate_accepts_supported_modes_without_mutating_source(
+    mode: str,
+    tmp_path: Path,
+) -> None:
+    import asyncio
+
+    source = tmp_path / f"supported-{mode}.png"
+    source_bytes = _mode_bytes(mode)
+    source.write_bytes(source_bytes)
+    result = asyncio.run(
+        ValidateStaticCapability().invoke(
+            _invocation(
+                "vulca.image.validate_static",
+                {"artifact": str(source), "color_mode": mode},
+                options={"authorized_paths": [str(source)]},
+            )
+        )
+    )
+
+    assert result.status is CapabilityStatus.SUCCEEDED
+    assert result.output["checks"]["color_mode"]["status"] == "PASS"
+    assert result.output["checks"]["color_mode"]["actual"] == mode
+    assert source.read_bytes() == source_bytes
+
+
+@pytest.mark.parametrize("mode", ("CMYK", "I", "F", "1"))
+@pytest.mark.parametrize("with_expected_mode", (False, True))
+def test_validate_rejects_unsupported_modes_with_or_without_expected_mode(
+    mode: str,
+    with_expected_mode: bool,
+) -> None:
+    import asyncio
+
+    inputs: dict = {"artifact": _raw_b64(_mode_bytes(mode))}
+    if with_expected_mode:
+        inputs["color_mode"] = mode
+    result = asyncio.run(
+        ValidateStaticCapability().invoke(
+            _invocation("vulca.image.validate_static", inputs)
+        )
+    )
+
+    assert result.status is CapabilityStatus.FAILED
+    assert result.side_effect_state is SideEffectState.NOT_STARTED
+    assert result.error_code == "UNSUPPORTED_MODE"
+    assert result.artifacts == ()
+
+
+def test_validate_safe_area_echoes_only_allowlisted_finite_numeric_fields() -> None:
+    import asyncio
+
+    secret = "static-safe-area-secret"
+    invocation = _invocation(
+        "vulca.image.validate_static",
+        {
+            "artifact": _raw_b64(_png_bytes()),
+            "safe_area": {"top": 0.1},
+        },
+    )
+    safe_area = invocation.inputs["safe_area"]
+    assert isinstance(safe_area, dict)
+    safe_area["right"] = float("nan")
+    safe_area["internal"] = {"api_key": secret}
+
+    result = asyncio.run(ValidateStaticCapability().invoke(invocation))
+
+    assert result.status is CapabilityStatus.SUCCEEDED
+    assert result.output["validation_status"] == "FAIL"
+    check = result.output["checks"]["safe_area"]
+    assert check["status"] == "FAIL"
+    assert check["expected"] == {"top": 0.1}
+    assert secret not in repr(result)
+    json.dumps(result.output, allow_nan=False)

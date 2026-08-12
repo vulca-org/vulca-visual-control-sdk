@@ -14,17 +14,11 @@ from vulca.capability.runtime import (
     CapabilityProviderTimeoutError,
     CapabilityProviderTransportError,
     CapabilityProviderUnsupportedError,
+    raise_capability_programming_error,
+    raise_sanitized_exception,
 )
 
 logger = logging.getLogger("vulca.studio")
-
-
-def _rethrow_programming(exc: Exception) -> None:
-    try:
-        replacement = type(exc)("capability programming error")
-    except Exception:
-        replacement = RuntimeError("capability programming error")
-    raise replacement from None
 
 
 def crop_region(image_path: str, bbox: dict, *, output_dir: str = "") -> str:
@@ -149,7 +143,7 @@ class InpaintPhase:
         try:
             ref_b64 = base64.b64encode(Path(crop_path).read_bytes()).decode()
         except OSError:
-            raise CapabilityProviderTransportError() from None
+            raise_sanitized_exception(CapabilityProviderTransportError())
 
         # Pass api_key only when the caller supplied one; otherwise let each
         # provider resolve its own env var (OPENAI_API_KEY, GOOGLE_API_KEY, …).
@@ -157,7 +151,7 @@ class InpaintPhase:
         try:
             provider_inst = get_image_provider(provider, **provider_kwargs)
         except ValueError:
-            raise CapabilityProviderConstructionError() from None
+            raise_sanitized_exception(CapabilityProviderConstructionError())
         out_dir = Path(output_dir) if output_dir else Path(original_path).parent
         out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -208,7 +202,7 @@ class InpaintPhase:
                     i + 1,
                     type(exc).__name__,
                 )
-                _rethrow_programming(exc)
+                raise_capability_programming_error(exc)
 
         if not paths:
             if last_boundary is not None:

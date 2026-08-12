@@ -577,6 +577,8 @@ class ValidateStaticCapability:
             options = invocation.options
             data = _read_input(values.get("artifact"), options)
             image = _open_image(data)
+            if image.mode not in _SUPPORTED_IMAGE_MODES:
+                raise _StaticFailure("UNSUPPORTED_MODE")
         except _StaticFailure as failure:
             return _failed(invocation, failure.code, start)
 
@@ -584,8 +586,18 @@ class ValidateStaticCapability:
         expected_mime_value = values.get("media_type", values.get("expected_media_type"))
         expected_mime = expected_mime_value.lower() if isinstance(expected_mime_value, str) else None
         width, height = image.size
-        expected_width = values.get("width")
-        expected_height = values.get("height")
+        expected_width_value = values.get("width")
+        expected_height_value = values.get("height")
+        expected_width = (
+            expected_width_value
+            if isinstance(expected_width_value, int) and not isinstance(expected_width_value, bool)
+            else None
+        )
+        expected_height = (
+            expected_height_value
+            if isinstance(expected_height_value, int) and not isinstance(expected_height_value, bool)
+            else None
+        )
         expected_mode_value = values.get("color_mode", values.get("colour_mode"))
         expected_mode = expected_mode_value if isinstance(expected_mode_value, str) else None
         alpha_policy_value = values.get("alpha_policy")
@@ -597,8 +609,16 @@ class ValidateStaticCapability:
                 expected_mime,
                 actual_mime,
             ),
-            "width": _check(expected_width is None or expected_width == width, expected_width, width),
-            "height": _check(expected_height is None or expected_height == height, expected_height, height),
+            "width": _check(
+                expected_width_value is None or (expected_width is not None and expected_width == width),
+                expected_width,
+                width,
+            ),
+            "height": _check(
+                expected_height_value is None or (expected_height is not None and expected_height == height),
+                expected_height,
+                height,
+            ),
             "color_mode": _check(expected_mode is None or expected_mode == image.mode, expected_mode, image.mode),
         }
         if alpha_policy is None:
@@ -614,18 +634,39 @@ class ValidateStaticCapability:
 
         safe_area_value = values.get("safe_area")
         safe_area_ok = True
+        parsed_safe_area: dict[str, JsonValue] = {}
+        safe_area_expected: JsonValue = None
         if safe_area_value is not None:
+            safe_area_expected = parsed_safe_area
             if not isinstance(safe_area_value, dict):
                 safe_area_ok = False
             else:
                 for side in ("top", "right", "bottom", "left"):
-                    value = safe_area_value.get(side, 0.0)
-                    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)) or not 0 <= float(value) < 0.5:
+                    if side not in safe_area_value:
+                        continue
+                    value = safe_area_value[side]
+                    if (
+                        isinstance(value, bool)
+                        or not isinstance(value, (int, float))
+                        or not math.isfinite(float(value))
+                        or not 0 <= float(value) < 0.5
+                    ):
                         safe_area_ok = False
-        checks["safe_area"] = _check(safe_area_ok, cast(JsonValue, safe_area_value), "valid" if safe_area_ok else "invalid")
+                    else:
+                        parsed_safe_area[side] = float(value)
+        checks["safe_area"] = _check(
+            safe_area_ok,
+            safe_area_expected,
+            "valid" if safe_area_ok else "invalid",
+        )
 
-        max_bytes = values.get("max_bytes")
-        max_bytes_ok = max_bytes is None or (isinstance(max_bytes, int) and not isinstance(max_bytes, bool) and len(data) <= max_bytes)
+        max_bytes_value = values.get("max_bytes")
+        max_bytes = (
+            max_bytes_value
+            if isinstance(max_bytes_value, int) and not isinstance(max_bytes_value, bool)
+            else None
+        )
+        max_bytes_ok = max_bytes_value is None or (max_bytes is not None and len(data) <= max_bytes)
         checks["max_bytes"] = _check(max_bytes_ok, max_bytes, len(data))
 
         filename = values.get("filename", "")

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import math
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Protocol, TypeAlias
@@ -73,11 +74,37 @@ _CREDENTIAL_KEYS = frozenset(
 _CREDENTIAL_SUFFIXES = ("_api_key", "_secret", "_credential")
 
 
-def _credential_key_path(value: JsonValue, path: str) -> str | None:
+def _is_credential_key(key: str) -> bool:
+    normalized_key = key.lower()
+    return normalized_key in _CREDENTIAL_KEYS or normalized_key.endswith(_CREDENTIAL_SUFFIXES)
+
+
+def _validate_finite_json(value: object, field_name: str) -> None:
+    if value is None or isinstance(value, (str, bool, int)):
+        return
+    if isinstance(value, float):
+        if math.isfinite(value):
+            return
+        raise ValueError(f"{field_name} must contain only finite JSON values")
+    if isinstance(value, list):
+        for nested in value:
+            _validate_finite_json(nested, field_name)
+        return
     if isinstance(value, dict):
         for key, nested in value.items():
-            normalized_key = key.lower()
-            if normalized_key in _CREDENTIAL_KEYS or normalized_key.endswith(_CREDENTIAL_SUFFIXES):
+            if not isinstance(key, str):
+                raise ValueError(f"{field_name} must use string mapping keys for finite JSON")
+            _validate_finite_json(nested, field_name)
+        return
+    raise ValueError(f"{field_name} must contain only finite JSON values")
+
+
+def _credential_key_path(value: object, path: str) -> str | None:
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            if not isinstance(key, str):
+                continue
+            if _is_credential_key(key):
                 return f"{path}.{key}"
             nested_path = _credential_key_path(nested, f"{path}.{key}")
             if nested_path is not None:
@@ -109,6 +136,7 @@ class CapabilityInvocation:
         _validate_non_empty_identity("capability_version", self.capability_version)
 
         for field_name, value in (("inputs", self.inputs), ("options", self.options)):
+            _validate_finite_json(value, field_name)
             credential_path = _credential_key_path(value, field_name)
             if credential_path is not None:
                 raise ValueError(f"{field_name} contains credential-bearing key at {credential_path}")
@@ -146,6 +174,12 @@ class CapabilityResult:
     error_code: str | None = None
 
     def __post_init__(self) -> None:
+        for field_name, value in (("output", self.output), ("provider_receipt", self.provider_receipt)):
+            _validate_finite_json(value, field_name)
+            credential_path = _credential_key_path(value, field_name)
+            if credential_path is not None:
+                raise ValueError(f"{field_name} contains credential-bearing key at {credential_path}")
+
         if self.status not in (CapabilityStatus.SUCCEEDED, CapabilityStatus.FAILED):
             raise ValueError("status must be SUCCEEDED or FAILED")
 

@@ -58,14 +58,16 @@ def _result(
     status: CapabilityStatus = CapabilityStatus.SUCCEEDED,
     side_effect_state: SideEffectState = SideEffectState.COMPLETED,
     error_code: str | None = None,
+    output: dict | None = None,
+    provider_receipt: dict | None = None,
 ) -> CapabilityResult:
     return CapabilityResult(
         invocation_id="inv_test",
         status=status,
         side_effect_state=side_effect_state,
-        output={},
+        output={} if output is None else output,
         artifacts=(),
-        provider_receipt={},
+        provider_receipt={} if provider_receipt is None else provider_receipt,
         latency_ms=0,
         cost_minor=0,
         currency="USD",
@@ -305,6 +307,44 @@ def test_invocation_allows_binding_refs_and_non_secret_controls() -> None:
     assert invocation.options["max_tokens"] == 128
 
 
+@pytest.mark.parametrize("location", ("inputs", "options"))
+@pytest.mark.parametrize(
+    "invalid",
+    (
+        pytest.param(float("nan"), id="nan"),
+        pytest.param(float("inf"), id="positive-infinity"),
+        pytest.param(float("-inf"), id="negative-infinity"),
+        pytest.param(object(), id="object"),
+        pytest.param(("not", "json"), id="tuple"),
+    ),
+)
+def test_invocation_rejects_nested_non_json_values(location: str, invalid: object) -> None:
+    values: dict[str, object] = {"inputs": {}, "options": {}}
+    values[location] = {"nested": [invalid]}
+
+    with pytest.raises(ValueError, match="finite JSON"):
+        CapabilityInvocation(
+            invocation_id="inv_test",
+            capability_id="test.echo",
+            capability_version="1.0.0",
+            **values,
+        )
+
+
+@pytest.mark.parametrize("location", ("inputs", "options"))
+def test_invocation_rejects_non_string_mapping_keys(location: str) -> None:
+    values: dict[str, object] = {"inputs": {}, "options": {}}
+    values[location] = {"nested": {1: "not-json"}}
+
+    with pytest.raises(ValueError, match="string mapping keys"):
+        CapabilityInvocation(
+            invocation_id="inv_test",
+            capability_id="test.echo",
+            capability_version="1.0.0",
+            **values,
+        )
+
+
 @pytest.mark.parametrize(
     ("status", "side_effect_state", "error_code", "message"),
     (
@@ -332,6 +372,43 @@ def test_result_allows_unknown_side_effect_state_only_for_failure() -> None:
     )
 
     assert result.side_effect_state is SideEffectState.UNKNOWN
+
+
+@pytest.mark.parametrize("location", ("output", "provider_receipt"))
+@pytest.mark.parametrize(
+    "invalid",
+    (
+        pytest.param(float("nan"), id="nan"),
+        pytest.param(float("inf"), id="positive-infinity"),
+        pytest.param(float("-inf"), id="negative-infinity"),
+        pytest.param(object(), id="object"),
+        pytest.param(("not", "json"), id="tuple"),
+    ),
+)
+def test_result_rejects_nested_non_json_values(location: str, invalid: object) -> None:
+    values = {location: {"nested": [invalid]}}
+
+    with pytest.raises(ValueError, match="finite JSON"):
+        _result(**values)
+
+
+@pytest.mark.parametrize("location", ("output", "provider_receipt"))
+def test_result_rejects_non_string_mapping_keys(location: str) -> None:
+    values = {location: {"nested": {1: "not-json"}}}
+
+    with pytest.raises(ValueError, match="string mapping keys"):
+        _result(**values)
+
+
+@pytest.mark.parametrize("location", ("output", "provider_receipt"))
+def test_result_rejects_nested_credentials_without_echoing_values(location: str) -> None:
+    secret = "result-secret-must-not-escape"
+    values = {location: {"nested": [{"provider_api_key": secret}]}}
+
+    with pytest.raises(ValueError, match="credential-bearing") as caught:
+        _result(**values)
+
+    assert secret not in str(caught.value)
 
 
 def test_result_rejects_unknown_status() -> None:
