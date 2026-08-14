@@ -41,18 +41,24 @@ MODEL_CAPABILITIES: dict[str, dict[str, bool]] = {
         "quality": True,
         "output_format": True,
     },
+    "gpt-image-2-2026-04-21": {
+        "input_fidelity": False,
+        "quality": True,
+        "output_format": True,
+    },
 }
 
 MODEL_TOKEN_PRICING_PER_MILLION: dict[str, dict[str, float]] = {
     "gpt-image-1": {"input": 10.0, "output": 40.0},
     "gpt-image-1.5": {"input": 8.0, "output": 32.0},
     "gpt-image-2": {"input": 8.0, "output": 30.0},
+    "gpt-image-2-2026-04-21": {"input": 8.0, "output": 30.0},
 }
 
 def _openai_edit_capabilities(model: str) -> ImageEditCapabilities:
     if not model.startswith("gpt-image"):
         return ImageEditCapabilities()
-    if model == "gpt-image-2":
+    if model in ("gpt-image-2", "gpt-image-2-2026-04-21"):
         return ImageEditCapabilities(
             supports_edits=True,
             requires_mask_for_edits=True,
@@ -225,6 +231,8 @@ class OpenAIImageProvider:
         api_key: str = "",
         model: str = "gpt-image-1",
         base_url: str = "",
+        timeout: float = 120.0,
+        max_retries: int = 3,
     ):
         self.api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
         self.model = model
@@ -233,6 +241,8 @@ class OpenAIImageProvider:
             or os.environ.get("VULCA_OPENAI_BASE_URL", "")
             or os.environ.get("OPENAI_BASE_URL", "")
         )
+        self.timeout = float(timeout)
+        self.max_retries = int(max_retries)
 
     def edit_capabilities(self) -> ImageEditCapabilities:
         return _openai_edit_capabilities(self.model)
@@ -341,7 +351,7 @@ class OpenAIImageProvider:
         )
 
         async def _call() -> ImageResult:
-            async with httpx.AsyncClient(timeout=120) as client:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
                 headers = {"Authorization": f"Bearer {self.api_key}"}
                 if use_edits:
                     ref_bytes = base64.b64decode(reference_image_b64)
@@ -454,7 +464,7 @@ class OpenAIImageProvider:
 
         return await with_retry(
             _call,
-            max_retries=3,
+            max_retries=self.max_retries,
             base_delay_ms=500,
             max_delay_ms=16_000,
             retryable_check=_is_retryable,
@@ -535,7 +545,7 @@ class OpenAIImageProvider:
             )
 
             async def _call_chat() -> ImageResult:
-                async with httpx.AsyncClient(timeout=180) as client:
+                async with httpx.AsyncClient(timeout=self.timeout) as client:
                     headers = {"Authorization": f"Bearer {self.api_key}"}
                     payload = {
                         "model": self.model,
@@ -600,7 +610,7 @@ class OpenAIImageProvider:
 
             return await with_retry(
                 _call_chat,
-                max_retries=3,
+                max_retries=self.max_retries,
                 base_delay_ms=500,
                 max_delay_ms=16_000,
                 retryable_check=_is_chat_retryable,
@@ -621,7 +631,7 @@ class OpenAIImageProvider:
         effective_output_format = edit_filtered_params.get("output_format", "png")
 
         async def _call() -> ImageResult:
-            async with httpx.AsyncClient(timeout=180) as client:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
                 headers = {"Authorization": f"Bearer {self.api_key}"}
                 files = {
                     "image": ("image.png", image_bytes, "image/png"),
@@ -701,7 +711,7 @@ class OpenAIImageProvider:
 
         return await with_retry(
             _call,
-            max_retries=3,
+            max_retries=self.max_retries,
             base_delay_ms=500,
             max_delay_ms=16_000,
             retryable_check=_is_retryable,

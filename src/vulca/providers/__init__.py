@@ -1,5 +1,13 @@
 """Pluggable provider interfaces for image generation and VLM scoring."""
 from vulca.providers.base import ImageProvider, ImageResult, L1L5Scores, VLMProvider
+from vulca.providers.price_schedule import (
+    OPENAI_IMAGE_PRICE_SCHEDULE_2026_08_14,
+    ImagePriceEstimate,
+    ImagePriceSchedule,
+    PriceEstimationError,
+    estimate_openai_image_cost,
+    get_openai_image_price_schedule,
+)
 
 _IMAGE_PROVIDERS: dict[str, type] = {}
 _VLM_PROVIDERS: dict[str, type] = {}
@@ -67,4 +75,10 @@ def get_vlm_provider(name: str, **kwargs) -> VLMProvider:
 __all__ = [
     "ImageProvider", "VLMProvider", "ImageResult", "L1L5Scores",
     "get_image_provider", "get_vlm_provider",
+    "PriceEstimationError",
+    "ImagePriceSchedule",
+    "ImagePriceEstimate",
+    "OPENAI_IMAGE_PRICE_SCHEDULE_2026_08_14",
+    "get_openai_image_price_schedule",
+    "estimate_openai_image_cost",
 ]

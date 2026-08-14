@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "vulca"
-version = "0.24.0"
+version = "0.24.1"
 description = "Canonical visual Capability SDK for exact-version generation, bounded editing, static composition, adaptation, validation, and independent evaluation."
 readme = "README.md"
 license = "Apache-2.0"

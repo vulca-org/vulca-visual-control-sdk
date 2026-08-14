@@ -239,6 +239,59 @@ async def test_generate_adapter_returns_hashed_artifact_and_calls_provider_once(
 
 
 @pytest.mark.asyncio
+async def test_generate_adapter_forwards_gpt_image_2_snapshot_and_runtime_options() -> None:
+    generated_bytes = _png_bytes()
+    provider = SimpleNamespace(
+        generate=AsyncMock(
+            return_value=ImageResult(
+                image_b64=base64.b64encode(generated_bytes).decode("ascii"),
+                mime="image/png",
+                metadata={
+                    "provider": "openai",
+                    "model": "gpt-image-2-2026-04-21",
+                    "request_id": "req_openai_snapshot",
+                    "cost_usd": 0.05304,
+                },
+            )
+        )
+    )
+    runtime = FakeCapabilityRuntime(provider=provider, api_key="sk-test-secret")
+    invocation = _invocation(
+        "vulca.image.generate",
+        {
+            "prompt": "bamboo grove in mist",
+            "width": 1024,
+            "height": 1024,
+            "quality": "medium",
+            "output_format": "png",
+        },
+        options={
+            "provider": "openai",
+            "binding_ref": "settings:OPENAI_API_KEY",
+            "constructor_options": {
+                "model": "gpt-image-2-2026-04-21",
+                "timeout": 120.0,
+                "max_retries": 0,
+            },
+        },
+    )
+    result = await GenerateImageCapability(runtime=runtime).invoke(invocation)
+    assert result.status is CapabilityStatus.SUCCEEDED
+    assert result.side_effect_state is SideEffectState.COMPLETED
+    assert result.provider_receipt["provider"] == "openai"
+    assert result.provider_receipt["model"] == "gpt-image-2-2026-04-21"
+    assert result.provider_receipt["costKnown"] is True
+    assert result.cost_minor == 5  # 0.05304 * 100 rounded half up = 5 cents
+    assert runtime.provider_calls == [
+        (
+            "openai",
+            "settings:OPENAI_API_KEY",
+            {"model": "gpt-image-2-2026-04-21", "timeout": 120.0, "max_retries": 0},
+        )
+    ]
+
+
+@pytest.mark.asyncio
 async def test_generate_cost_rounds_half_up_and_absent_cost_is_unknown() -> None:
     for metadata, expected_minor, expected_known in (
         ({"cost_usd": 0.045}, 5, True),

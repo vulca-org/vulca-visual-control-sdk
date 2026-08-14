@@ -302,3 +302,93 @@ def test_openai_base_url_can_come_from_environment(monkeypatch):
         )
 
     assert requested_urls == ["https://env-gateway.example/v1/images/generations"]
+
+
+def test_gpt_image_2_snapshot_model_configured_and_priced():
+    from vulca.providers.openai_provider import (
+        MODEL_CAPABILITIES,
+        MODEL_TOKEN_PRICING_PER_MILLION,
+        _openai_edit_capabilities,
+    )
+
+    snapshot = "gpt-image-2-2026-04-21"
+    assert snapshot in MODEL_CAPABILITIES
+    assert MODEL_CAPABILITIES[snapshot] == {
+        "input_fidelity": False,
+        "quality": True,
+        "output_format": True,
+    }
+    assert snapshot in MODEL_TOKEN_PRICING_PER_MILLION
+    assert MODEL_TOKEN_PRICING_PER_MILLION[snapshot] == {"input": 8.0, "output": 30.0}
+
+    edit_caps = _openai_edit_capabilities(snapshot)
+    assert edit_caps.supports_edits is True
+    assert edit_caps.requires_mask_for_edits is True
+    assert edit_caps.supports_input_fidelity is False
+    assert edit_caps.supports_quality is True
+    assert edit_caps.supports_output_format is True
+
+
+def test_gpt_image_2_snapshot_generation_wire_payload_and_cost():
+    captured_payloads: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured_payloads.append(json.loads(request.content.decode()))
+        return httpx.Response(
+            200,
+            json={
+                "data": [{"b64_json": "AAAA"}],
+                "usage": {"input_tokens": 1_000, "output_tokens": 1_768},
+            },
+        )
+
+    with _httpx_with_handler(handler):
+        result = asyncio.run(
+            OpenAIImageProvider(
+                api_key="sk-test",
+                model="gpt-image-2-2026-04-21",
+                timeout=120.0,
+                max_retries=0,
+            ).generate(
+                "a serene ink landscape",
+                quality="medium",
+                output_format="png",
+            )
+        )
+
+    assert captured_payloads[0]["model"] == "gpt-image-2-2026-04-21"
+    assert captured_payloads[0]["quality"] == "medium"
+    assert captured_payloads[0]["output_format"] == "png"
+    assert result.metadata["model"] == "gpt-image-2-2026-04-21"
+    # 1000 * 8/1M + 1768 * 30/1M = 0.008 + 0.05304 = 0.06104
+    assert result.metadata["cost_usd"] == pytest.approx(0.06104)
+
+
+def test_openai_provider_timeout_and_max_retries_defaults_and_custom():
+    default_provider = OpenAIImageProvider(api_key="sk-test")
+    assert default_provider.timeout == 120.0
+    assert default_provider.max_retries == 3
+
+    custom_provider = OpenAIImageProvider(
+        api_key="sk-test",
+        model="gpt-image-2-2026-04-21",
+        timeout=45.0,
+        max_retries=0,
+    )
+    assert custom_provider.timeout == 45.0
+    assert custom_provider.max_retries == 0
+
+
+def test_openai_provider_zero_retries_fails_immediately_on_429():
+    attempts = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        return httpx.Response(429, json={"error": {"message": "Rate limit reached"}})
+
+    provider = OpenAIImageProvider(api_key="sk-test", max_retries=0)
+    with _httpx_with_handler(handler):
+        with pytest.raises(RuntimeError, match="rate limit"):
+            asyncio.run(provider.generate("test"))
+    assert attempts == 1
