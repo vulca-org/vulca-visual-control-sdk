@@ -255,6 +255,19 @@ def estimate_openai_image_cost(
             f"Operation {operation!r} not supported for model {model!r}; allowed: {allowed_ops}",
         )
 
+    allowed_formats = model_entry.get("allowed_formats", ["png"])
+    if not isinstance(output_format, str) or not output_format.strip():
+        raise PriceEstimationError(
+            "UNSUPPORTED_FORMAT",
+            f"Output format must be a non-empty string, got {output_format!r}",
+        )
+    normalized_format = output_format.strip().lower()
+    if normalized_format not in allowed_formats:
+        raise PriceEstimationError(
+            "UNSUPPORTED_FORMAT",
+            f"Format {output_format!r} not supported for model {model!r}; allowed: {allowed_formats}",
+        )
+
     if not isinstance(image_count, int) or image_count <= 0 or image_count > 10:
         raise PriceEstimationError(
             "INVALID_IMAGE_COUNT",
@@ -318,7 +331,7 @@ def estimate_openai_image_cost(
             image_count=image_count,
             size=size,
             quality=quality,
-            output_format=output_format,
+            output_format=normalized_format,
             input_tokens_upper_bound=input_tokens_upper_bound,
             output_tokens_upper_bound=total_output_tokens,
             details={
@@ -363,7 +376,7 @@ def estimate_openai_image_cost(
             image_count=image_count,
             size=size,
             quality=quality,
-            output_format=output_format,
+            output_format=normalized_format,
             input_tokens_upper_bound=0,
             output_tokens_upper_bound=0,
             details={

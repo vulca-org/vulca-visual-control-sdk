@@ -158,3 +158,40 @@ def test_estimate_cost_supports_dalle3_per_image():
     )
     assert estimate.estimated_max_cost_usd == pytest.approx(0.04)
     assert estimate.estimated_max_cost_minor == 4
+
+
+def test_estimate_cost_rejects_unsupported_format():
+    for unsupported in ("bmp", "gif", "tiff", "svg"):
+        with pytest.raises(PriceEstimationError) as exc_info:
+            estimate_openai_image_cost(
+                model="gpt-image-2-2026-04-21",
+                operation="generate",
+                output_format=unsupported,
+            )
+        assert exc_info.value.code == "UNSUPPORTED_FORMAT"
+
+    with pytest.raises(PriceEstimationError) as exc_info:
+        estimate_openai_image_cost(
+            model="dall-e-3",
+            operation="generate",
+            output_format="jpeg",
+        )
+    assert exc_info.value.code == "UNSUPPORTED_FORMAT"
+
+    for invalid in ("", "   ", None, 123):  # type: ignore[arg-type]
+        with pytest.raises(PriceEstimationError) as exc_info:
+            estimate_openai_image_cost(
+                model="gpt-image-2-2026-04-21",
+                operation="generate",
+                output_format=invalid,
+            )
+        assert exc_info.value.code == "UNSUPPORTED_FORMAT"
+
+
+def test_estimate_cost_normalizes_valid_format_case_and_whitespace():
+    estimate = estimate_openai_image_cost(
+        model="gpt-image-2-2026-04-21",
+        operation="generate",
+        output_format="  PNG  ",
+    )
+    assert estimate.output_format == "png"
