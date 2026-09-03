@@ -526,6 +526,20 @@ From an agent: `/evaluate` calls the `evaluate_artwork` MCP tool and returns evo
 
 ---
 
+## Professional services
+
+The SDK is Apache 2.0 and free to use. [Issues](https://github.com/vulca-org/vulca-visual-control-sdk/issues) are the right place for bugs, feature requests, and workflow needs — those cost nothing and always will.
+
+If you would rather have the author do the work, three scoped engagements are bookable:
+
+| Engagement | What you get | From |
+|---|---|---|
+| [Pre-release audit](https://contra.com/s/bYreA76Y-llm-vlm-evaluation-harness-benchmark-llm-as-judge) | Your AI-generated visuals or LLM outputs scored against a rubric your team signs off on — a pass / repair / withhold decision per asset, each with a reason | $600 · 1 week |
+| [Custom MCP server or Claude Code plugin](https://contra.com/s/cvLZq3U6-custom-mcp-server-or-claude-code-plugin-for-your-workflow) | Your API, dataset, or workflow turned into tools an agent can call reliably — tool schemas, guardrails, tests, setup docs | $1,000 · 2 weeks |
+| [Bounded creative job](https://contra.com/s/2LYcLrbY-bounded-creative-job-one-brief-in-a-released-package-out) | One approved brief in; a checked, human-released package out, with a manifest and a delivery receipt explaining why each asset shipped | $2,500 · 2 weeks |
+
+Maintained by [Haorui Yu](https://contra.com/_qt7lsowm) — PhD researcher in vision-language model evaluation at the University of Dundee, and first author of the papers above.
+
 ## Support
 
 - **Issues:** [github.com/vulca-org/vulca-visual-control-sdk/issues](https://github.com/vulca-org/vulca-visual-control-sdk/issues) — bug reports, feature requests, workflow needs that should become a skill
