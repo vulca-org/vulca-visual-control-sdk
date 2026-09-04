@@ -626,20 +626,41 @@ def _cmd_evaluate(args: argparse.Namespace) -> None:
     if args.json:
         import dataclasses
         print(json_mod.dumps(dataclasses.asdict(result), indent=2, ensure_ascii=False))
-        return
+        sys.exit(_exit_code_for(result))
 
     if mode == "reference":
         _print_reference_result(result)
     else:
         _print_strict_result(result)
 
+    sys.exit(_exit_code_for(result))
+
 
 
 _MOCK_BANNER = (
-    "  !! MOCK EVALUATION -- scores below are synthetic. "
-    "No model was called,\n"
-    "     and nothing here is evidence about this image."
+    "  !! MOCK RUN -- no model was called. Everything below is synthetic\n"
+    "     and is not evidence about anything real."
 )
+
+
+_FAILED_BANNER = (
+    "  !! SCORING FAILED -- the dimensions below are not measurements.\n"
+    "     Every level reads 0% because scoring raised, not because the work\n"
+    "     scored zero. Do not record this as a verdict."
+)
+
+
+def _print_failure_banner(result) -> None:
+    """Say that a run crashed, where a reader cannot mistake it for a verdict."""
+    if getattr(result, "failed", False):
+        print(f"\n{_FAILED_BANNER}")
+        if getattr(result, "error", ""):
+            print(f"     Error: {result.error}")
+
+
+def _exit_code_for(result) -> int:
+    """A crashed evaluation must not leave the shell believing it succeeded."""
+    return 1 if getattr(result, "failed", False) else 0
 
 
 def _print_mock_banner(result) -> None:
@@ -658,6 +679,7 @@ def _print_cost_line(result) -> None:
 
 def _print_strict_result(result) -> None:
     """Strict mode output: judge style with pass/fail indicators."""
+    _print_failure_banner(result)
     _print_mock_banner(result)
     print(f"\n  VULCA Evaluation Result")
     print(f"  {'=' * 50}")
@@ -708,6 +730,7 @@ def _print_strict_result(result) -> None:
 
 def _print_reference_result(result) -> None:
     """Reference mode output: advisor style with deviation analysis."""
+    _print_failure_banner(result)
     _print_mock_banner(result)
     print(f"\n  VULCA Cultural Analysis (reference mode)")
     print(f"  {'=' * 50}")
@@ -792,6 +815,8 @@ def _cmd_evaluate_fusion(args: argparse.Namespace, skills: list[str] | None) -> 
 
 def _print_fusion_result(results) -> None:
     """Comparison table across traditions. Extracted so it can be tested."""
+    for _, r in results:
+        _print_failure_banner(r)
     if any(getattr(r, "mock", False) for _, r in results):
         print(f"\n{_MOCK_BANNER}")
     print(f"\n  VULCA Fusion Analysis ({len(results)} traditions)")
@@ -968,6 +993,14 @@ def _cmd_create(args: argparse.Namespace) -> None:
         print(json_mod.dumps(data, indent=2, ensure_ascii=False))
         return
 
+    _print_create_result(result, image_path)
+
+
+def _print_create_result(result, image_path: str = "") -> None:
+    """Creation summary. Extracted so its disclosure can be tested."""
+    _print_mock_banner(result)
+    if result.provider:
+        print(f"\n  Provider:  {result.provider}")
     print(f"\n  VULCA Creation Result")
     print(f"  {'=' * 40}")
     print(f"  Session:   {result.session_id}")
