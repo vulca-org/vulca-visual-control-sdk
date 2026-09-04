@@ -83,6 +83,14 @@ class EvalResult:
     cost_usd: float = 0.0
     """Estimated API cost in USD."""
 
+    mock: bool = False
+    """True when the scores are synthetic and no model was called.
+
+    Carried on the result so that every renderer and every downstream report can
+    say so. A mock score sheet is shaped exactly like a real one; without this
+    flag nothing downstream can tell them apart.
+    """
+
     raw: dict = field(default_factory=dict)
     """Raw response data for advanced usage."""
 

@@ -233,7 +233,8 @@ class Engine:
 
         summary = _build_summary(weighted_total, resolved_tradition, dimensions, mode)
 
-        cost = _estimate_cost(skills or [])
+        # A mock run calls no API, so it has no cost to report.
+        cost = 0.0 if self.mock else _estimate_cost(skills or [])
 
         return EvalResult(
             score=round(weighted_total, 4),
@@ -256,6 +257,7 @@ class Engine:
             skills=skill_results,
             intent_confidence=intent_confidence,
             cost_usd=cost,
+            mock=self.mock,
             raw=vlm_result,
         )
 

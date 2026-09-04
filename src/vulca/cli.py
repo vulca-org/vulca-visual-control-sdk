@@ -635,8 +635,30 @@ def _cmd_evaluate(args: argparse.Namespace) -> None:
 
 
 
+_MOCK_BANNER = (
+    "  !! MOCK EVALUATION -- scores below are synthetic. "
+    "No model was called,\n"
+    "     and nothing here is evidence about this image."
+)
+
+
+def _print_mock_banner(result) -> None:
+    """Announce a synthetic score sheet, at the top where it cannot be missed."""
+    if getattr(result, "mock", False):
+        print(f"\n{_MOCK_BANNER}")
+
+
+def _print_cost_line(result) -> None:
+    """Cost and latency, or a plain statement that a mock run has neither."""
+    if getattr(result, "mock", False):
+        print("\n  MOCK run: no API call, no cost.")
+    else:
+        print(f"\n  Latency: {result.latency_ms}ms | Cost: ${result.cost_usd:.4f}")
+
+
 def _print_strict_result(result) -> None:
     """Strict mode output: judge style with pass/fail indicators."""
+    _print_mock_banner(result)
     print(f"\n  VULCA Evaluation Result")
     print(f"  {'=' * 50}")
     print(f"  Score:     {result.score:.0%}")
@@ -680,12 +702,13 @@ def _print_strict_result(result) -> None:
         for name, sr in result.skills.items():
             print(f"    {name}: {sr.score:.0%} -- {sr.summary}")
 
-    print(f"\n  Latency: {result.latency_ms}ms | Cost: ${result.cost_usd:.4f}")
+    _print_cost_line(result)
     print()
 
 
 def _print_reference_result(result) -> None:
     """Reference mode output: advisor style with deviation analysis."""
+    _print_mock_banner(result)
     print(f"\n  VULCA Cultural Analysis (reference mode)")
     print(f"  {'=' * 50}")
     print(f"  Alignment: {result.score:.0%}")
@@ -726,7 +749,7 @@ def _print_reference_result(result) -> None:
 
     print()
     print(f"  Summary: {result.summary}")
-    print(f"\n  Latency: {result.latency_ms}ms | Cost: ${result.cost_usd:.4f}")
+    _print_cost_line(result)
     print()
 
 
@@ -764,6 +787,13 @@ def _cmd_evaluate_fusion(args: argparse.Namespace, skills: list[str] | None) -> 
         print(json_mod.dumps(all_data, indent=2, ensure_ascii=False))
         return
 
+    _print_fusion_result(results)
+
+
+def _print_fusion_result(results) -> None:
+    """Comparison table across traditions. Extracted so it can be tested."""
+    if any(getattr(r, "mock", False) for _, r in results):
+        print(f"\n{_MOCK_BANNER}")
     print(f"\n  VULCA Fusion Analysis ({len(results)} traditions)")
     print(f"  {'=' * 60}")
     print()
@@ -804,15 +834,19 @@ def _cmd_evaluate_fusion(args: argparse.Namespace, skills: list[str] | None) -> 
             dims = ", ".join(f"{d} ({_DIM_NAMES[d]})" for d in departures)
             print(f"    vs {tradition}: departures in {dims}")
 
-    total_cost = sum(r.cost_usd for _, r in results)
-    total_latency = sum(r.latency_ms for _, r in results)
-    print(f"\n  Latency: {total_latency}ms | Cost: ${total_cost:.4f}")
+    if any(getattr(r, "mock", False) for _, r in results):
+        print("\n  MOCK run: no API call, no cost.")
+    else:
+        total_cost = sum(r.cost_usd for _, r in results)
+        total_latency = sum(r.latency_ms for _, r in results)
+        print(f"\n  Latency: {total_latency}ms | Cost: ${total_cost:.4f}")
     print()
 
 
 # ---------------------------------------------------------------------------
 # Create command
 # ---------------------------------------------------------------------------
+
 
 def _cmd_create(args: argparse.Namespace) -> None:
     import json as json_mod
@@ -959,7 +993,7 @@ def _cmd_create(args: argparse.Namespace) -> None:
         for r in result.recommendations:
             print(f"    - {r}")
 
-    print(f"\n  Latency: {result.latency_ms}ms | Cost: ${result.cost_usd:.4f}")
+    _print_cost_line(result)
     print()
 
 
