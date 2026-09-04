@@ -100,7 +100,7 @@ class TestFusionDisclosesMock:
             _print_fusion_result(results)
         out = buf.getvalue()
         assert MARKER in out
-        assert "Cost: $" not in out
+        assert "cost: $" not in out.lower()
 
     def test_fusion_real_output_is_not_marked(self):
         import io
@@ -113,7 +113,7 @@ class TestFusionDisclosesMock:
             _print_fusion_result(results)
         out = buf.getvalue()
         assert MARKER not in out
-        assert "Cost: $" in out
+        assert "cost: $" in out.lower()
 
 
 # -- Create path -----------------------------------------------------------
@@ -156,12 +156,12 @@ class TestCreateRendererDisclosesMock:
     def test_mock_provider_is_disclosed(self):
         out = self._render(_bare_create(mock=True, provider="mock", cost_usd=0.0))
         assert MARKER in out
-        assert "Cost: $" not in out
+        assert "cost: $" not in out.lower()
 
     def test_real_provider_is_not_marked(self):
         out = self._render(_bare_create(provider="nb2", cost_usd=0.0042))
         assert MARKER not in out
-        assert "Cost: $" in out
+        assert "cost: $" in out.lower()
 
 
 # -- Failed scoring --------------------------------------------------------
@@ -241,3 +241,59 @@ class TestExitCode:
 
         assert _exit_code_for(_bare_result(failed=True, error="boom")) != 0
         assert _exit_code_for(_bare_result()) == 0
+
+
+# -- Cost provenance -------------------------------------------------------
+#
+# `_estimate_cost` returns 0.001 + 0.0001 + 0.0002 * len(skills): a constant.
+# It printed the same $0.0011 for a mock run and for a real one against the
+# live API. Labelling a constant as "Cost" is the same failure as labelling a
+# mock score as a measurement.
+
+
+class TestCostProvenance:
+    def test_result_records_whether_cost_was_measured(self):
+        assert "cost_is_estimate" in EvalResult.__dataclass_fields__
+        # Anything not explicitly measured is an estimate.
+        assert _bare_result().cost_is_estimate is True
+
+    def test_estimated_cost_is_labelled_as_such(self):
+        import io
+        from contextlib import redirect_stdout
+        from vulca.cli import _print_strict_result
+
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            _print_strict_result(_bare_result(cost_usd=0.0011, cost_is_estimate=True))
+        out = buf.getvalue()
+        assert "Est. cost" in out
+        assert "Cost: $" not in out
+
+    def test_measured_cost_is_not_called_an_estimate(self):
+        import io
+        from contextlib import redirect_stdout
+        from vulca.cli import _print_strict_result
+
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            _print_strict_result(_bare_result(cost_usd=0.0042, cost_is_estimate=False))
+        out = buf.getvalue()
+        assert "Cost: $" in out
+        assert "Est. cost" not in out
+
+    def test_engine_prefers_a_measured_cost_over_the_estimate(self, monkeypatch):
+        import vulca._engine as eng
+
+        payload = {f"L{i}": 0.8 for i in range(1, 6)}
+        payload["_extra_keys"] = []
+        payload["_cost_usd"] = 0.0037
+
+        async def _scored(**kwargs):
+            return payload
+
+        monkeypatch.setattr(eng, "score_image", _scored)
+        monkeypatch.setattr(eng, "load_image_base64", lambda *a, **k: _immediate(("", "image/png")))
+
+        result = asyncio.run(eng.Engine(api_key="k").run("x.png", tradition="chinese_xieyi"))
+        assert result.cost_usd == 0.0037
+        assert result.cost_is_estimate is False
