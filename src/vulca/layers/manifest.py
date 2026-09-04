@@ -42,6 +42,7 @@ def write_manifest(
     partial: bool = False,
     warnings: list | None = None,
     layer_extras: dict[str, dict] | None = None,
+    layer_files: dict[str, str] | None = None,
     tradition: str = "",
 ) -> str:
     """Write manifest V3 JSON to output_dir/manifest.json. Returns path."""
@@ -49,6 +50,23 @@ def write_manifest(
     out_dir.mkdir(parents=True, exist_ok=True)
 
     extras = layer_extras or {}
+    files = layer_files or {}
+    unknown_file_ids = set(files) - {info.id for info in layers}
+    if unknown_file_ids:
+        raise ValueError(f"layer_files contains unknown layer ids: {sorted(unknown_file_ids)}")
+    for layer_id, relative_path in files.items():
+        if not isinstance(relative_path, str) or not relative_path:
+            raise ValueError(f"layer_files[{layer_id!r}] must be a safe relative PNG path")
+        normalized = Path(relative_path)
+        if (
+            normalized.is_absolute()
+            or "\\" in relative_path
+            or "\x00" in relative_path
+            or ".." in normalized.parts
+            or (normalized.parts and ":" in normalized.parts[0])
+            or normalized.suffix.lower() != ".png"
+        ):
+            raise ValueError(f"layer_files[{layer_id!r}] must be a safe relative PNG path")
     for lid, extra_dict in extras.items():
         if not isinstance(extra_dict, dict):
             raise ValueError(
@@ -84,7 +102,7 @@ def write_manifest(
                 "content_type": info.content_type,
                 "visible": info.visible,
                 "locked": info.locked,
-                "file": f"{info.name}.png",
+                "file": files.get(info.id, f"{info.name}.png"),
                 "dominant_colors": info.dominant_colors,
                 "regeneration_prompt": info.regeneration_prompt,
                 "opacity": info.opacity,

@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Added the advanced/experimental, non-generative `openraster-roundtrip`
+  Effect Pack for flat full-canvas Artifact/manifest layer interchange with
+  Krita-compatible OpenRaster files.
+- Added public Python, CLI, and MCP import/export surfaces plus per-layer and
+  composite hash evidence in `openraster-roundtrip.json`.
+- Added strict archive, XML, canvas, path-containment, decoded-workload, and
+  no-overwrite validation. Unsupported transforms, blend modes, and nested
+  stacks fail explicitly.
+
+### Verification
+
+- 71 related Artifact/manifest/alpha/CLI/OpenRaster tests pass.
+- Dedicated clean-clone OpenRaster suite: 11 passed.
+- Local seed baseline and tiny training/eval gates pass.
+- `ruff check src tests` and `git diff --check` pass.
+
 ## v0.23.1 (2026-05-11)
 
 Patch release for the NB2/Gemini masked-edit adapter.

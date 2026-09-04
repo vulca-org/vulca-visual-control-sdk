@@ -227,10 +227,14 @@ def main(argv: list[str] | None = None) -> None:
     layers_composite.add_argument("artwork_dir", help="Directory with layer PNGs + manifest")
     layers_composite.add_argument("--output", "-o", default="", help="Output path")
 
-    layers_export = layers_sub.add_parser("export", help="Export layers as PSD/PNG")
+    layers_export = layers_sub.add_parser("export", help="Export layers as PNG, legacy PSD directory, or OpenRaster")
     layers_export.add_argument("artwork_dir", help="Directory with layers")
-    layers_export.add_argument("--format", "-f", default="png", choices=["png", "psd"])
+    layers_export.add_argument("--format", "-f", default="png", choices=["png", "psd", "ora"])
     layers_export.add_argument("--output", "-o", default="", help="Output path")
+
+    layers_import_ora = layers_sub.add_parser("import-ora", help="Import a flat OpenRaster archive into a new artwork directory")
+    layers_import_ora.add_argument("archive", help="Input .ora archive")
+    layers_import_ora.add_argument("output_dir", help="New destination directory (must not already exist)")
 
     layers_regen = layers_sub.add_parser("regenerate", help="Regenerate unified image from composite")
     layers_regen.add_argument("artwork_dir", help="Directory with composite + layers")
@@ -1780,10 +1784,15 @@ def _cmd_layers(args: argparse.Namespace) -> None:
 
     elif args.layers_command == "export":
         from vulca.layers.edit import load_artwork
-        from vulca.layers.export import export_psd
+        from vulca.layers.export import export_openraster, export_psd
         from vulca.layers.composite import composite_layers
         artwork = load_artwork(args.artwork_dir)
-        if args.format == "psd":
+        if args.format == "ora":
+            import json
+            out = args.output or str(Path(args.artwork_dir) / "layers.ora")
+            result = export_openraster(args.artwork_dir, out)
+            print(json.dumps(result, indent=2))
+        elif args.format == "psd":
             out = args.output or str(Path(args.artwork_dir) / "layers.psd")
             import json
             manifest_path = Path(args.artwork_dir) / "manifest.json"
@@ -1807,6 +1816,12 @@ def _cmd_layers(args: argparse.Namespace) -> None:
                 width = height = 1024
             composite_layers(artwork.layers, width=width, height=height, output_path=out)
             print(f"  Exported PNG: {out}")
+
+    elif args.layers_command == "import-ora":
+        import json
+        from vulca.layers.export import import_openraster
+        result = import_openraster(args.archive, args.output_dir)
+        print(json.dumps(result, indent=2))
 
     elif args.layers_command == "add":
         from vulca.layers.manifest import load_manifest

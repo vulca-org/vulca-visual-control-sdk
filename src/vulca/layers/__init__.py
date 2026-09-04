@@ -5,7 +5,7 @@ from vulca.layers.split import split_extract, split_regenerate, split_vlm, crop_
 from vulca.layers.palette_mask import split_palette, build_palette_mask_prompt, decode_palette_mask
 from vulca.layers.composite import composite_layers
 from vulca.layers.blend import blend_normal, blend_screen, blend_multiply, blend_overlay, blend_soft_light, blend_darken, blend_lighten, blend_color_dodge, blend_color_burn, blend_layers
-from vulca.layers.export import export_psd
+from vulca.layers.export import OpenRasterError, export_openraster, export_psd, import_openraster
 from vulca.layers.manifest import write_manifest as write_manifest_v2, load_manifest, MANIFEST_VERSION
 from vulca.layers.artifact import write_artifact_v3, load_artifact_v3, ARTIFACT_VERSION
 from vulca.layers.mask import build_color_mask, apply_mask_to_image
@@ -48,7 +48,7 @@ __all__ = [
     "blend_normal", "blend_screen", "blend_multiply",
     "blend_overlay", "blend_soft_light", "blend_darken", "blend_lighten",
     "blend_color_dodge", "blend_color_burn", "blend_layers",
-    "export_psd",
+    "export_psd", "export_openraster", "import_openraster", "OpenRasterError",
     "write_manifest_v2", "load_manifest", "MANIFEST_VERSION",
     "write_artifact_v3", "load_artifact_v3", "ARTIFACT_VERSION",
     "build_color_mask", "apply_mask_to_image",

@@ -387,7 +387,7 @@ vulca create "intent" -t tradition --provider mock|gemini|nb2|openai|openai-resp
 vulca evaluate image.png -t tradition --mode strict|reference|fusion
   --skills brand,audience,trend  # extra commercial scoring skills
 
-# Layers (all 14 subcommands)
+# Layers
 vulca layers analyze image.png
 vulca layers split image.png -o dir --mode extract|regenerate|sam
 vulca layers redraw dir --layer name -i "instruction"
@@ -397,7 +397,8 @@ vulca layers lock dir --layer name
 vulca layers merge dir --layers a,b --name merged
 vulca layers duplicate dir --layer name
 vulca layers composite dir -o output.png
-vulca layers export dir -o output.psd
+vulca layers export dir --format ora -o layers.ora
+vulca layers import-ora layers.ora imported-dir
 vulca layers evaluate dir -t tradition
 vulca layers regenerate dir --provider gemini
 
@@ -443,6 +444,8 @@ weights = vulca.get_weights("chinese_xieyi")
 ```
 
 </details>
+
+OpenRaster interchange is an advanced/experimental, non-generative Effect Pack. See [the round-trip contract](docs/effect-packs/openraster-roundtrip.md) for protected invariants, evidence, and first-version limits.
 
 <details>
 <summary>Architecture</summary>

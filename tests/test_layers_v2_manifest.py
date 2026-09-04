@@ -124,6 +124,29 @@ class TestWriteManifestV2:
         write_manifest([layer], output_dir=str(new_dir), width=512, height=512)
         assert (new_dir / "manifest.json").exists()
 
+    def test_accepts_safe_layer_file_override(self, tmp_path):
+        layer = _make_layer("subject", z_index=0, id="stable-subject")
+        path = write_manifest(
+            [layer],
+            output_dir=str(tmp_path),
+            width=512,
+            height=512,
+            layer_files={"stable-subject": "layers/0000_subject.png"},
+        )
+        data = json.loads(Path(path).read_text())
+        assert data["layers"][0]["file"] == "layers/0000_subject.png"
+
+    def test_rejects_unsafe_layer_file_override(self, tmp_path):
+        layer = _make_layer("subject", z_index=0, id="stable-subject")
+        with pytest.raises(ValueError, match="safe relative PNG path"):
+            write_manifest(
+                [layer],
+                output_dir=str(tmp_path),
+                width=512,
+                height=512,
+                layer_files={"stable-subject": "../escape.png"},
+            )
+
 
 class TestLoadManifestV2:
     def test_load_v2_manifest(self, tmp_path):
