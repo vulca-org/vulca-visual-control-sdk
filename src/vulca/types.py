@@ -83,6 +83,15 @@ class EvalResult:
     cost_usd: float = 0.0
     """Estimated API cost in USD."""
 
+    cost_is_estimate: bool = True
+    """True when :attr:`cost_usd` is a constant rather than measured usage.
+
+    ``_estimate_cost`` returns a fixed figure that does not depend on the call,
+    and printed the same value for a mock run and a real one. Defaulting to True
+    means a caller has to be told explicitly that a cost was measured, rather
+    than inferring it from a number that looks precise.
+    """
+
     failed: bool = False
     """True when scoring raised and the dimensions below are not measurements.
 

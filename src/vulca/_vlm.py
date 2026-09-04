@@ -620,6 +620,15 @@ async def score_image(
             else:
                 break
 
+        # Real usage and cost, when the provider reports them. Kept separate
+        # from the static estimate so callers can tell a measurement from a
+        # placeholder.
+        measured_cost = None
+        try:
+            measured_cost = float(litellm.completion_cost(completion_response=resp))
+        except Exception:
+            measured_cost = None
+
         text = resp.choices[0].message.content.strip()
         from vulca._parse import parse_llm_json
         # Extract only the <scoring> section (strips <observation> scratchpad)
@@ -673,6 +682,8 @@ async def score_image(
             data[f"{level}_reference_technique"] = ref_techniques.get(level, "")
         # Include risk_flags so _engine.py can read it from the flat dict
         data["risk_flags"] = parsed["risk_flags"]
+        if measured_cost is not None:
+            data["_cost_usd"] = measured_cost
         # Store extra_keys and names in data so _engine.py can split core vs extra
         data["_extra_keys"] = extra_keys
         data["_extra_names"] = {e["key"]: e["name"] for e in extra_dims[:3]}

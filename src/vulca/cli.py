@@ -673,6 +673,11 @@ def _print_cost_line(result) -> None:
     """Cost and latency, or a plain statement that a mock run has neither."""
     if getattr(result, "mock", False):
         print("\n  MOCK run: no API call, no cost.")
+    elif getattr(result, "cost_is_estimate", True):
+        print(
+            f"\n  Latency: {result.latency_ms}ms | "
+            f"Est. cost: ${result.cost_usd:.4f} (fixed estimate, not measured usage)"
+        )
     else:
         print(f"\n  Latency: {result.latency_ms}ms | Cost: ${result.cost_usd:.4f}")
 
