@@ -47,7 +47,11 @@ jobs:
         # expansion tracked in v0.17.12+.
         run: ruff check src/ tests/
       - name: Capability type check
-        # Pinned: the gate must not drift with whatever mypy resolves today.
+        # The gate targets Python 3.11 and runs on the 3.11 job only: numpy >= 2.5
+        # (3.12+ wheels) ships PEP 695 `type` statements in its stubs that a
+        # 3.11-targeted mypy rejects while following imports. mypy is pinned so
+        # the gate cannot drift with whatever version resolves today.
+        if: matrix.python-version == '3.11'
         run: |
           python -m pip install "mypy==2.3.1"
           python -m mypy src/vulca/capability
