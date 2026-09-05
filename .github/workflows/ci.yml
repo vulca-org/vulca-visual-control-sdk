@@ -47,7 +47,10 @@ jobs:
         # expansion tracked in v0.17.12+.
         run: ruff check src/ tests/
       - name: Capability type check
-        run: python -m mypy src/vulca/capability
+        # Pinned: the gate must not drift with whatever mypy resolves today.
+        run: |
+          python -m pip install "mypy==2.3.1"
+          python -m mypy src/vulca/capability
       - name: Capability release gate
         run: python -m pytest -q tests/test_capability_contract.py tests/test_capability_wheel.py tests/test_capability_builtin.py tests/test_capability_static.py
       - name: Test

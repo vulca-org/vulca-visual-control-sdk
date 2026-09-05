@@ -172,8 +172,18 @@ markers = [
 [tool.mypy]
 python_version = "3.11"
 ignore_missing_imports = true
+# Report only the modules named on the command line; imported modules are
+# still analysed for their types but their own errors are not reported here.
+follow_imports = "silent"
 warn_return_any = false
 warn_unused_configs = true
+
+# numpy >= 2.5 ships PEP 695 `type` statements in its stubs, which mypy
+# rejects while targeting Python 3.11. Nothing in the checked packages
+# uses numpy types directly, so skip following into it.
+[[tool.mypy.overrides]]
+module = "numpy.*"
+follow_imports = "skip"
 
 # Modules with pre-existing type errors. New files are checked by default.
 # Remove entries as you fix their errors to tighten coverage incrementally.

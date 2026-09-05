@@ -344,7 +344,7 @@ async def _ainpaint_with_mask(
     Path(out_path).write_bytes(base64.b64decode(result.image_b64))
 
     elapsed = int((time.monotonic() - t0) * 1000)
-    cost = float(result.metadata.get("cost_usd") or 0.05)
+    cost = float((result.metadata or {}).get("cost_usd") or 0.05)
     return InpaintResult(
         bbox=edit_bbox,
         variants=[out_path],
