@@ -1,5 +1,7 @@
 # VULCA Accountable Creative Organization Runtime
 
+> **Status: historical (2026-08-11).** On 2026-08-14 VULCA moved Job Runtime ownership to the DSH/Cordis-derived native kernel in `vulca-platform` (see its `docs/product/2026-08-14-vulca-unified-product-prd.md`). The capability contracts in `src/vulca/capability/` (plan 01) remain canonical and are consumed by that kernel as a sidecar; the runtime plans 02–06 in this series are superseded by the platform-side milestones and are kept only as design record.
+
 **Date:** 2026-08-11
 
 **Status:** Product constitution and system design confirmed; competitive-completeness amendment incorporated; implementation plan package written; product implementation not started

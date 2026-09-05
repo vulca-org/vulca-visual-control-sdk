@@ -1,5 +1,7 @@
 # VULCA Campaign Static JobClass Implementation Plan
 
+> **Status: historical (2026-08-11).** On 2026-08-14 VULCA moved Job Runtime ownership to the DSH/Cordis-derived native kernel in `vulca-platform` (see its `docs/product/2026-08-14-vulca-unified-product-prd.md`). The capability contracts in `src/vulca/capability/` (plan 01) remain canonical and are consumed by that kernel as a sidecar; the runtime plans 02–06 in this series are superseded by the platform-side milestones and are kept only as design record.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Complete `campaign-static-creative-production-release.v1` from approved business brief to genuinely generated and adapted static campaign assets, independent evaluation, bounded repair, deterministic package, human release, exact DeliveryReceipt and inert MemoryCandidates—with no routine operator handoff into a competitor UI.

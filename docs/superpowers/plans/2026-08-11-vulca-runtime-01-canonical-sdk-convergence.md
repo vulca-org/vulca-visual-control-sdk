@@ -1,5 +1,7 @@
 # VULCA Canonical SDK Convergence Implementation Plan
 
+> **Status: historical (2026-08-11).** On 2026-08-14 VULCA moved Job Runtime ownership to the DSH/Cordis-derived native kernel in `vulca-platform` (see its `docs/product/2026-08-14-vulca-unified-product-prd.md`). The capability contracts in `src/vulca/capability/` (plan 01) remain canonical and are consumed by that kernel as a sidecar; the runtime plans 02–06 in this series are superseded by the platform-side milestones and are kept only as design record.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Release-contract the next canonical SDK locally as `vulca==0.24.0`, expose every visual Capability needed by the first static JobClass, lock the platform to an exact source commit and wheel hash, then remove both vendored SDK copies and every build-time copy/mount path.
