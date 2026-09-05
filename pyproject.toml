@@ -1,11 +1,11 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling==1.31.0"]
 build-backend = "hatchling.build"
 
 [project]
 name = "vulca"
-version = "0.23.1"
-description = "Agent-native cultural art SDK for image generation, L1-L5 evaluation, layer editing, visual discovery, and cultural traditions. Agents drive creative decisions; Vulca provides hands + eyes."
+version = "0.24.1"
+description = "Canonical visual Capability SDK for exact-version generation, bounded editing, static composition, adaptation, validation, and independent evaluation."
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.10"
@@ -172,6 +172,9 @@ markers = [
 [tool.mypy]
 python_version = "3.11"
 ignore_missing_imports = true
+# Report only the modules named on the command line; imported modules are
+# still analysed for their types but their own errors are not reported here.
+follow_imports = "silent"
 warn_return_any = false
 warn_unused_configs = true
 

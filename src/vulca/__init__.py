@@ -38,6 +38,13 @@ import os
 os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "true")
 
 from vulca._version import __version__
+from vulca.capability import (
+    CapabilityInvocation,
+    CapabilityManifest,
+    CapabilityRegistry,
+    CapabilityResult,
+    SideEffectState,
+)
 from vulca.create import acreate, create
 from vulca.evaluate import aevaluate, evaluate
 from vulca.inpaint import ainpaint, inpaint
@@ -101,6 +108,11 @@ __all__ = [
     "VLMProvider",
     "ImageResult",
     "L1L5Scores",
+    "CapabilityManifest",
+    "CapabilityInvocation",
+    "CapabilityResult",
+    "SideEffectState",
+    "CapabilityRegistry",
 ]
 
 # Studio Pipeline V2 (v0.5.0) — extend __all__ when module is available

@@ -108,6 +108,8 @@ def test_dunder_all():
         "EvalResult", "CreateResult", "SkillResult",
         "ImageProvider", "VLMProvider", "ImageResult", "L1L5Scores",
         "compose_prompt_from_design",
+        "CapabilityManifest", "CapabilityInvocation", "CapabilityResult",
+        "SideEffectState", "CapabilityRegistry",
     }
     studio_names = {"Brief", "SessionState", "StudioSession", "inpaint", "ainpaint", "InpaintResult",
                     "LayerInfo", "LayerResult", "LayeredArtwork"}

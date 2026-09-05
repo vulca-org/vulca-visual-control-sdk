@@ -18,6 +18,25 @@ from vulca.types import InpaintResult
 logger = logging.getLogger("vulca.inpaint")
 
 
+def _scratch_output_path(scratch_root: Path, requested: str) -> Path:
+    """Resolve an optional output below the caller-owned scratch root."""
+    root = scratch_root.resolve(strict=True)
+    if not requested:
+        return root / "blended.png"
+    candidate = Path(requested).expanduser()
+    if not candidate.is_absolute():
+        candidate = root / candidate
+    try:
+        resolved = candidate.resolve(strict=False)
+    except (OSError, RuntimeError, ValueError):
+        raise ValueError("scratch output path is invalid") from None
+    if not resolved.is_relative_to(root):
+        raise ValueError("scratch output path must stay inside scratch_dir")
+    if candidate.is_symlink():
+        raise ValueError("scratch output path must not be a symlink")
+    return candidate
+
+
 async def ainpaint(
     image: str,
     *,
@@ -32,6 +51,7 @@ async def ainpaint(
     output_path: str = "",
     api_key: str = "",
     mock: bool = False,
+    scratch_dir: str = "",
 ) -> InpaintResult:
     """Inpaint a region of an artwork (async).
 
@@ -65,6 +85,9 @@ async def ainpaint(
         output_path: Explicit output path. If empty, defaults next to source.
         api_key: API key override.
         mock: Use mock mode (no real API calls).
+        scratch_dir: Optional caller-owned scratch root. Coordinate crops,
+            repaint variants, and the blended output are written beneath it;
+            the root is never deleted by this function.
     """
     from vulca.studio.phases.inpaint import (
         InpaintPhase,
@@ -96,6 +119,7 @@ async def ainpaint(
             output_path=output_path or output,
             api_key=api_key,
             mock=mock,
+            scratch_dir=scratch_dir,
             t0=t0,
         )
 
@@ -122,13 +146,16 @@ async def ainpaint(
     # 2. Crop
     import tempfile
 
-    crop_dir = tempfile.mkdtemp(prefix="vulca-inpaint-")
+    if scratch_dir:
+        scratch_root = Path(scratch_dir).expanduser()
+        scratch_root.mkdir(parents=True, exist_ok=True)
+    else:
+        scratch_root = Path(tempfile.mkdtemp(prefix="vulca-inpaint-"))
+    crop_dir = str(scratch_root)
     crop_path = crop_region(image, bbox, output_dir=crop_dir)
 
     # 3. Repaint variants
     if mock:
-        from pathlib import Path
-
         from PIL import Image as PILImage
 
         variants = []
@@ -155,19 +182,20 @@ async def ainpaint(
     blended = ""
     if variants:
         if mock:
-            from pathlib import Path
-
             from PIL import Image as PILImage
 
-            blended_path = Path(crop_dir) / "blended.png"
+            blended_path = scratch_root / "blended.png"
             PILImage.new("RGB", (256, 256), "blue").save(str(blended_path))
             blended = str(blended_path)
         else:
+            blend_output = output_path or output
+            if scratch_dir:
+                blend_output = str(_scratch_output_path(scratch_root, blend_output))
             blended = await phase.blend(
                 image,
                 variants[sel_idx],
                 bbox=bbox,
-                output_path=output,
+                output_path=blend_output,
                 api_key=api_key,
             )
 
@@ -224,6 +252,7 @@ async def _ainpaint_with_mask(
     output_path: str,
     api_key: str,
     mock: bool,
+    scratch_dir: str,
     t0: float,
 ) -> InpaintResult:
     """Native mask-based inpaint via provider edit endpoint."""
@@ -254,7 +283,17 @@ async def _ainpaint_with_mask(
         )
 
     # Resolve output path early so mock and real branches share it.
-    out_path = output_path or str(src_p.with_name(f"inpainted_{src_p.stem}.png"))
+    if scratch_dir:
+        scratch_root = Path(scratch_dir).expanduser()
+        scratch_root.mkdir(parents=True, exist_ok=True)
+        output_path = str(_scratch_output_path(scratch_root, output_path))
+    else:
+        scratch_root = None
+    out_path = output_path or (
+        str(scratch_root / "blended.png")
+        if scratch_root is not None
+        else str(src_p.with_name(f"inpainted_{src_p.stem}.png"))
+    )
 
     if mock:
         # Mock path: copy source as the "edited" output. Tests assert the
@@ -275,6 +314,10 @@ async def _ainpaint_with_mask(
         )
 
     if provider != "openai":
+        if scratch_dir:
+            from vulca.capability.runtime import CapabilityProviderUnsupportedError
+
+            raise CapabilityProviderUnsupportedError()
         raise NotImplementedError(
             f"inpaint_artwork(mask_path=...) is only supported on provider='openai' "
             f"(gpt-image-2). Got provider={provider!r}. Either switch provider, "
@@ -301,7 +344,7 @@ async def _ainpaint_with_mask(
     Path(out_path).write_bytes(base64.b64decode(result.image_b64))
 
     elapsed = int((time.monotonic() - t0) * 1000)
-    cost = float(result.metadata.get("cost_usd") or 0.05)
+    cost = float((result.metadata or {}).get("cost_usd") or 0.05)
     return InpaintResult(
         bbox=edit_bbox,
         variants=[out_path],
@@ -329,6 +372,7 @@ def inpaint(
     output_path: str = "",
     api_key: str = "",
     mock: bool = False,
+    scratch_dir: str = "",
 ) -> InpaintResult:
     """Inpaint a region of an artwork (sync wrapper). See ``ainpaint``.
 
@@ -352,6 +396,7 @@ def inpaint(
                 output_path=output_path,
                 api_key=api_key,
                 mock=mock,
+                scratch_dir=scratch_dir,
             )
         )
     finally:

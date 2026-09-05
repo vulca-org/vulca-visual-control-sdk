@@ -9,6 +9,16 @@ from pathlib import Path
 
 from PIL import Image
 
+from vulca.capability.runtime import (
+    CapabilityProviderConstructionError,
+    CapabilityProviderTimeoutError,
+    CapabilityProviderTransportError,
+    CapabilityProviderUnsupportedError,
+    raise_capability_programming_error,
+    raise_sanitized_exception,
+    sanitized_capability_programming_exception,
+)
+
 logger = logging.getLogger("vulca.studio")
 
 
@@ -133,20 +143,29 @@ class InpaintPhase:
         # later pastes the variant back into the original.
         try:
             ref_b64 = base64.b64encode(Path(crop_path).read_bytes()).decode()
-        except OSError as exc:
-            raise RuntimeError(
-                f"Cannot read crop reference at {crop_path!r}: {exc}"
-            ) from exc
+        except OSError:
+            # This is local input validation before any provider call. Preserve
+            # the established RuntimeError contract without echoing the path or
+            # the underlying OS error across the capability boundary.
+            raise RuntimeError("Cannot read crop reference") from None
 
         # Pass api_key only when the caller supplied one; otherwise let each
         # provider resolve its own env var (OPENAI_API_KEY, GOOGLE_API_KEY, …).
         provider_kwargs = {"api_key": api_key} if api_key else {}
-        provider_inst = get_image_provider(provider, **provider_kwargs)
+        safe_exception: Exception | None = None
+        try:
+            provider_inst = get_image_provider(provider, **provider_kwargs)
+        except ValueError:
+            safe_exception = CapabilityProviderConstructionError()
+        except Exception as exception:
+            safe_exception = sanitized_capability_programming_exception(exception)
+        if safe_exception is not None:
+            raise_sanitized_exception(safe_exception)
         out_dir = Path(output_dir) if output_dir else Path(original_path).parent
         out_dir.mkdir(parents=True, exist_ok=True)
 
         paths: list[str] = []
-        errors: list[str] = []
+        last_boundary: Exception | None = None
         for i in range(count):
             try:
                 result = await provider_inst.generate(
@@ -158,14 +177,46 @@ class InpaintPhase:
                 filepath = out_dir / f"repaint_v{i+1}.{ext}"
                 filepath.write_bytes(base64.b64decode(result.image_b64))
                 paths.append(str(filepath))
+            except (CapabilityProviderTimeoutError, TimeoutError) as exc:
+                last_boundary = CapabilityProviderTimeoutError()
+                logger.warning(
+                    "Repaint variant %d failed: category=timeout type=%s",
+                    i + 1,
+                    type(exc).__name__,
+                )
+            except (CapabilityProviderTransportError, ConnectionError) as exc:
+                last_boundary = CapabilityProviderTransportError()
+                logger.warning(
+                    "Repaint variant %d failed: category=transport type=%s",
+                    i + 1,
+                    type(exc).__name__,
+                )
+            except CapabilityProviderUnsupportedError as exc:
+                last_boundary = CapabilityProviderUnsupportedError()
+                logger.warning(
+                    "Repaint variant %d failed: category=unsupported type=%s",
+                    i + 1,
+                    type(exc).__name__,
+                )
+            except CapabilityProviderConstructionError as exc:
+                last_boundary = CapabilityProviderConstructionError()
+                logger.warning(
+                    "Repaint variant %d failed: category=construction type=%s",
+                    i + 1,
+                    type(exc).__name__,
+                )
             except Exception as exc:
-                errors.append(f"variant {i+1}: {exc}")
-                logger.warning("Repaint variant %d failed: %s", i + 1, exc)
+                logger.warning(
+                    "Repaint variant %d failed: category=programming type=%s",
+                    i + 1,
+                    type(exc).__name__,
+                )
+                raise_capability_programming_error(exc)
 
         if not paths:
-            raise RuntimeError(
-                f"All {count} repaint variants failed: " + "; ".join(errors)
-            )
+            if last_boundary is not None:
+                raise last_boundary
+            raise CapabilityProviderTransportError()
         return paths
 
     async def blend(

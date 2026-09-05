@@ -37,12 +37,26 @@ jobs:
         # with "Unknown node 'whitespace_analyze'". Headless wheel is ~50MB.
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev,mcp,tools]"
+          python -m pip install "build==1.4.3" "hatchling==1.31.0"
+          python -m pip install -e ".[dev,mcp,tools]"
+      - name: Dependency check
+        run: python -m pip check
       - name: Lint
         # Narrow rule set (E9/F63/F7/F82) per pyproject.toml [tool.ruff.lint].
         # Legacy codebase has 377 violations under default rules; incremental
         # expansion tracked in v0.17.12+.
         run: ruff check src/ tests/
+      - name: Capability type check
+        # The gate targets Python 3.11 and runs on the 3.11 job only: numpy >= 2.5
+        # (3.12+ wheels) ships PEP 695 `type` statements in its stubs that a
+        # 3.11-targeted mypy rejects while following imports. mypy is pinned so
+        # the gate cannot drift with whatever version resolves today.
+        if: matrix.python-version == '3.11'
+        run: |
+          python -m pip install "mypy==2.3.1"
+          python -m mypy src/vulca/capability
+      - name: Capability release gate
+        run: python -m pytest -q tests/test_capability_contract.py tests/test_capability_wheel.py tests/test_capability_builtin.py tests/test_capability_static.py
       - name: Test
         # Ignore-list covers tests that require heavy deps NOT installable on
         # CI's size/time budget — primarily torch (~2GB wheel) and local-only
@@ -52,6 +66,10 @@ jobs:
         # Remove entries as underlying issues are fixed in v0.17.12+ (see task #28).
         run: |
           pytest tests/ \
+            --ignore=tests/test_capability_contract.py \
+            --ignore=tests/test_capability_wheel.py \
+            --ignore=tests/test_capability_builtin.py \
+            --ignore=tests/test_capability_static.py \
             --ignore=tests/test_cli_layers_retry.py \
             --ignore=tests/test_layered_mock_fallback.py \
             --ignore=tests/test_layered_partial_e2e.py \
