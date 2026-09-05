@@ -132,13 +132,16 @@ assert loaded_path.is_relative_to(install_dir), loaded_path
 assert not loaded_path.is_relative_to(project_root), loaded_path
 assert not loaded_path.is_relative_to(source_dir), loaded_path
 assert all(Path(package_path).resolve().is_relative_to(install_dir) for package_path in vulca.__path__)
-assert all(
-    not (
-        Path(entry or ".").resolve().is_relative_to(project_root)
-        or Path(entry or ".").resolve().is_relative_to(source_dir)
-    )
-    for entry in sys.path
-), sys.path
+# The environment may carry an editable install of this very project (CI
+# installs it with `pip install -e`), which puts the source tree on sys.path.
+# What matters is that nothing imported as vulca came from there.
+for module_name, module in list(sys.modules.items()):
+    if module_name == "vulca" or module_name.startswith("vulca."):
+        module_file = getattr(module, "__file__", None)
+        if module_file:
+            module_path = Path(module_file).resolve()
+            assert module_path.is_relative_to(install_dir), (module_name, module_file)
+            assert not module_path.is_relative_to(source_dir), (module_name, module_file)
 
 registry = builtin_registry()
 resolved = sorted(

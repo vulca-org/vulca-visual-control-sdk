@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import inspect
 import logging
 import math
@@ -216,7 +217,7 @@ async def test_generate_adapter_returns_hashed_artifact_and_calls_provider_once(
     assert result.status is CapabilityStatus.SUCCEEDED
     assert result.side_effect_state is SideEffectState.COMPLETED
     assert result.artifacts[0].content == generated_bytes
-    assert result.artifacts[0].sha256 == "1e6a203ef9b5909254d20328a60d90d4085623a8f4f176068cdfe4a8c7bef3db"
+    assert result.artifacts[0].sha256 == hashlib.sha256(generated_bytes).hexdigest()
     assert result.cost_minor == 4
     assert result.provider_receipt["provider"] == "mock"
     assert result.provider_receipt["model"] == "mock-v1"
