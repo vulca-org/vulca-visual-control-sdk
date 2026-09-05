@@ -253,3 +253,5 @@ class InpaintResult:
 
     latency_ms: int = 0
     cost_usd: float = 0.0
+    cost_is_estimate: bool = True
+    """True when :attr:`cost_usd` is a fallback constant rather than a provider-reported charge."""

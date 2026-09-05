@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Mapping, TypeAlias, cast
 
 from PIL import Image, ImageDraw, ImageFont, UnidentifiedImageError
+from PIL.Image import DecompressionBombError
 
 from .types import (
     CapabilityArtifact,
@@ -34,6 +35,8 @@ _MIME_TO_FORMAT = {
     "image/webp": "WEBP",
     "image/gif": "GIF",
 }
+# Largest output canvas one static request may ask for (8192 x 8192).
+_MAX_OUTPUT_PIXELS = 8192 * 8192
 _SUPPORTED_IMAGE_MODES = frozenset({"RGB", "RGBA", "L", "P"})
 _PATH_SUFFIXES = frozenset({".bmp", ".gif", ".jpeg", ".jpg", ".otf", ".png", ".ttf", ".webp"})
 _Font: TypeAlias = ImageFont.FreeTypeFont | ImageFont.ImageFont
@@ -181,7 +184,7 @@ def _open_image(data: bytes) -> Image.Image:
         with Image.open(BytesIO(data)) as opened:
             opened.load()
             return opened.copy()
-    except (UnidentifiedImageError, OSError, TypeError, ValueError, SyntaxError):
+    except (DecompressionBombError, UnidentifiedImageError, OSError, TypeError, ValueError, SyntaxError):
         raise _StaticFailure("CORRUPT_ARTIFACT") from None
 
 
@@ -238,6 +241,8 @@ def _dimensions(values: Mapping[str, JsonValue]) -> tuple[int, int]:
     if isinstance(width, bool) or not isinstance(width, int) or isinstance(height, bool) or not isinstance(height, int):
         raise _StaticFailure("INVALID_DIMENSIONS")
     if width <= 0 or height <= 0:
+        raise _StaticFailure("INVALID_DIMENSIONS")
+    if width * height > _MAX_OUTPUT_PIXELS:
         raise _StaticFailure("INVALID_DIMENSIONS")
     return width, height
 
@@ -355,11 +360,20 @@ def _fit_lines(
 
 
 def _resize_cover(image: Image.Image, width: int, height: int) -> Image.Image:
-    scale = max(width / image.width, height / image.height)
-    resized = image.resize((max(width, round(image.width * scale)), max(height, round(image.height * scale))), Image.Resampling.LANCZOS)
-    left = (resized.width - width) // 2
-    top = (resized.height - height) // 2
-    return resized.crop((left, top, left + width, top + height))
+    # Crop the source to the target aspect first, then resize exactly once.
+    # Scaling the whole source first can request an intermediate of tens of
+    # gigapixels for extreme aspect ratios (a 1 x N strip covering a square).
+    target_ratio = width / height
+    if image.width / image.height > target_ratio:
+        crop_width = max(1, round(image.height * target_ratio))
+        crop_height = image.height
+    else:
+        crop_width = image.width
+        crop_height = max(1, round(image.width / target_ratio))
+    left = (image.width - crop_width) // 2
+    top = (image.height - crop_height) // 2
+    cropped = image.crop((left, top, left + crop_width, top + crop_height))
+    return cropped.resize((width, height), Image.Resampling.LANCZOS)
 
 
 def _resize_contain(image: Image.Image, width: int, height: int, media_type: str) -> Image.Image:

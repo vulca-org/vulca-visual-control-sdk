@@ -8,6 +8,7 @@ maximum cost estimation to support accountable runtime spend reservation.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import copy
 import hashlib
 import json
 import math
@@ -202,7 +203,7 @@ def get_openai_image_price_schedule() -> ImagePriceSchedule:
         observed_date=OPENAI_IMAGE_PRICE_SCHEDULE_2026_08_14["observed_date"],
         currency=OPENAI_IMAGE_PRICE_SCHEDULE_2026_08_14["currency"],
         schedule_hash=_SCHEDULE_HASH_2026_08_14,
-        raw=dict(OPENAI_IMAGE_PRICE_SCHEDULE_2026_08_14),
+        raw=copy.deepcopy(OPENAI_IMAGE_PRICE_SCHEDULE_2026_08_14),
     )
 
 
@@ -229,6 +230,12 @@ def estimate_openai_image_cost(
     """
     schedule = get_openai_image_price_schedule()
 
+    live_hash = _compute_canonical_hash(schedule.raw)
+    if live_hash != schedule.schedule_hash:
+        raise PriceEstimationError(
+            "SCHEDULE_HASH_MISMATCH",
+            f"Schedule content hash {live_hash!r} does not match the frozen {schedule.schedule_hash!r}",
+        )
     if schedule_id is not None and schedule_id != schedule.schedule_id:
         raise PriceEstimationError(
             "SCHEDULE_ID_MISMATCH",

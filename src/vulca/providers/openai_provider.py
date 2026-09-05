@@ -7,7 +7,7 @@ import logging
 import os
 import re
 
-from vulca.providers.base import ImageEditCapabilities, ImageProvider, ImageResult
+from vulca.providers.base import ImageEditCapabilities, ImageProvider, ImageResult, ProviderRequestRejected
 from vulca.providers.retry import with_retry
 
 
@@ -313,6 +313,8 @@ class OpenAIImageProvider:
             # Our enriched 429 RuntimeError (normalized for readability) keeps
             # the rate-limit marker so retry logic still kicks in. Terminal
             # RuntimeErrors (403/402/400) do not carry this marker.
+            if isinstance(exc, ProviderRequestRejected) and exc.status_code == 429:
+                return True
             if isinstance(exc, RuntimeError) and "rate limit hit" in str(exc).lower():
                 return True
             # Network-level errors (timeout, connect) are retryable
@@ -405,36 +407,40 @@ class OpenAIImageProvider:
                 # 403 Org-verification (gpt-image-2 launch gates API access)
                 if resp.status_code == 403:
                     if "organization must be verified" in body_lower:
-                        raise RuntimeError(
+                        raise ProviderRequestRejected(
                             f"OpenAI model {model!r} requires Org verification at "
                             "https://platform.openai.com/settings/organization/general. "
-                            "Wait 15 min after verifying."
+                            "Wait 15 min after verifying.",
+                            status_code=403,
                         )
                 # 402 billing / insufficient credits
                 elif resp.status_code == 402:
-                    raise RuntimeError(
+                    raise ProviderRequestRejected(
                         "OpenAI billing blocked: insufficient credits or "
                         "payment failure. Visit "
                         "https://platform.openai.com/settings/organization/billing "
-                        "to fix."
+                        "to fix.",
+                        status_code=402,
                     )
                 # 400 content-policy / safety violation
                 elif resp.status_code == 400 and (
                     "content_policy_violation" in body_lower
                     or "safety" in body_lower
                 ):
-                    raise RuntimeError(
+                    raise ProviderRequestRejected(
                         "OpenAI content policy blocked the request. "
                         "Revise the prompt or negative_prompt to reduce "
-                        "policy-triggering terms."
+                        "policy-triggering terms.",
+                        status_code=400,
                     )
                 # 429 rate limit — enrich the message. `_is_retryable`
                 # recognizes this RuntimeError marker ("rate limit hit") so
                 # with_retry still backs off and retries.
                 elif resp.status_code == 429:
-                    raise RuntimeError(
+                    raise ProviderRequestRejected(
                         "OpenAI rate limit hit. "
-                        "Retry in ~60s or reduce concurrency."
+                        "Retry in ~60s or reduce concurrency.",
+                        status_code=429,
                     )
                 resp.raise_for_status()
                 data = resp.json()
@@ -576,7 +582,7 @@ class OpenAIImageProvider:
                         json=payload,
                     )
                     if resp.status_code == 429:
-                        raise RuntimeError("OpenAI rate limit hit. rate limit hit")
+                        raise ProviderRequestRejected("OpenAI rate limit hit. rate limit hit", status_code=429)
                     resp.raise_for_status()
                     data = resp.json()
                     image_ref = _extract_chat_image_reference(data)
@@ -657,24 +663,27 @@ class OpenAIImageProvider:
                 body_lower = body_text.lower()
 
                 if resp.status_code == 403 and "organization must be verified" in body_lower:
-                    raise RuntimeError(
+                    raise ProviderRequestRejected(
                         f"OpenAI model {self.model!r} requires Org verification at "
-                        "https://platform.openai.com/settings/organization/general."
+                        "https://platform.openai.com/settings/organization/general.",
+                        status_code=403,
                     )
                 if resp.status_code == 402:
-                    raise RuntimeError(
+                    raise ProviderRequestRejected(
                         "OpenAI billing blocked: insufficient credits or "
-                        "payment failure."
+                        "payment failure.",
+                        status_code=402,
                     )
                 if resp.status_code == 400 and (
                     "content_policy_violation" in body_lower
                     or "safety" in body_lower
                 ):
-                    raise RuntimeError(
-                        "OpenAI content policy blocked the inpaint request."
+                    raise ProviderRequestRejected(
+                        "OpenAI content policy blocked the inpaint request.",
+                        status_code=400,
                     )
                 if resp.status_code == 429:
-                    raise RuntimeError("OpenAI rate limit hit. rate limit hit")
+                    raise ProviderRequestRejected("OpenAI rate limit hit. rate limit hit", status_code=429)
                 resp.raise_for_status()
                 data = resp.json()
 
@@ -703,6 +712,8 @@ class OpenAIImageProvider:
             if response is not None:
                 status = getattr(response, "status_code", None)
                 return status in (429, 500, 503)
+            if isinstance(exc, ProviderRequestRejected) and exc.status_code == 429:
+                return True
             if isinstance(exc, RuntimeError) and "rate limit hit" in str(exc).lower():
                 return True
             if isinstance(exc, (httpx.TimeoutException, httpx.ConnectError)):

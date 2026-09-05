@@ -79,3 +79,16 @@ class VLMProvider(Protocol):
         guidance: str = "",
         **kwargs,
     ) -> L1L5Scores: ...
+
+
+class ProviderRequestRejected(RuntimeError):
+    """The provider received the request and refused it with an HTTP status.
+
+    Subclasses ``RuntimeError`` so existing callers keep working; carries the
+    status so capability adapters can classify the failure without parsing
+    the human-readable message.
+    """
+
+    def __init__(self, message: str, *, status_code: int | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code

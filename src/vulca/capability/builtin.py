@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import httpx
 import math
 import re
 import shutil
@@ -21,9 +22,11 @@ from io import BytesIO
 from pathlib import Path
 from typing import Mapping, cast
 
+from PIL.Image import DecompressionBombError
+
 from vulca.evaluate import aevaluate
 from vulca.inpaint import ainpaint
-from vulca.providers.base import ImageProvider
+from vulca.providers.base import ImageProvider, ProviderRequestRejected
 from vulca.types import EvalResult
 
 from .registry import CapabilityRegistry
@@ -134,6 +137,31 @@ def _manifest(
         retryable_codes=retryable_codes,
         deterministic=deterministic,
     )
+
+
+def _classify_provider_failure(exc: BaseException, *, dispatched: bool) -> tuple[str, SideEffectState] | None:
+    """Map a provider-side failure to a declared error code and side-effect state.
+
+    ``dispatched`` says whether the provider operation had already been sent;
+    before that point nothing can have happened, so the state is NOT_STARTED.
+    Anything that is not a recognised provider failure returns None and stays a
+    programming error.
+    """
+
+    if isinstance(exc, (CapabilityProviderTimeoutError, TimeoutError, httpx.TimeoutException)):
+        return "PROVIDER_TIMEOUT", SideEffectState.UNKNOWN if dispatched else SideEffectState.NOT_STARTED
+    if isinstance(exc, (CapabilityProviderTransportError, ConnectionError, httpx.TransportError)):
+        return "PROVIDER_TRANSPORT_FAILED", SideEffectState.UNKNOWN if dispatched else SideEffectState.NOT_STARTED
+    status: int | None = None
+    if isinstance(exc, ProviderRequestRejected):
+        status = exc.status_code
+    elif isinstance(exc, httpx.HTTPStatusError):
+        status = exc.response.status_code
+    else:
+        return None
+    if not dispatched or (status is not None and 400 <= status < 500):
+        return "PROVIDER_REJECTED", SideEffectState.NOT_STARTED
+    return "PROVIDER_REJECTED", SideEffectState.UNKNOWN
 
 
 def _elapsed_ms(start: float) -> int:
@@ -325,7 +353,7 @@ def _inspect_image(data: bytes) -> _ImageInspection | None:
             image.load()
             media_type = Image.MIME.get(image_format or "", "").lower()
             return _ImageInspection(media_type=media_type, size=image.size, mode=image.mode)
-    except (OSError, TypeError, ValueError, SyntaxError):
+    except (DecompressionBombError, OSError, TypeError, ValueError, SyntaxError):
         return None
 
 
@@ -345,7 +373,7 @@ def _image_size(data: bytes, *, code: str = "CORRUPT_ARTIFACT") -> tuple[int, in
         with Image.open(BytesIO(data)) as image:
             image.load()
             return image.size
-    except (OSError, TypeError, ValueError, SyntaxError):
+    except (DecompressionBombError, OSError, TypeError, ValueError, SyntaxError):
         raise _PreflightFailure(code) from None
 
 
@@ -478,7 +506,7 @@ def _validated_edit_output(data: bytes, source_size: tuple[int, int]) -> str:
                 raise _PostflightFailure("DIMENSION_MISMATCH")
     except _PostflightFailure:
         raise
-    except (OSError, ValueError, SyntaxError):
+    except (DecompressionBombError, OSError, ValueError, SyntaxError):
         raise _PostflightFailure("CORRUPT_ARTIFACT") from None
     return mime
 
@@ -579,15 +607,18 @@ class GenerateImageCapability:
                 start=start,
             )
         except CapabilityProviderTimeoutError:
-            return _failed(invocation, code="PROVIDER_TIMEOUT", state=SideEffectState.UNKNOWN, start=start)
+            return _failed(invocation, code="PROVIDER_TIMEOUT", state=SideEffectState.NOT_STARTED, start=start)
         except CapabilityProviderTransportError:
             return _failed(
                 invocation,
                 code="PROVIDER_TRANSPORT_FAILED",
-                state=SideEffectState.UNKNOWN,
+                state=SideEffectState.NOT_STARTED,
                 start=start,
             )
         except Exception as exc:
+            classified = _classify_provider_failure(exc, dispatched=False)
+            if classified is not None:
+                return _failed(invocation, code=classified[0], state=classified[1], start=start)
             raise_capability_programming_error(exc)
 
         try:
@@ -606,15 +637,18 @@ class GenerateImageCapability:
         except CapabilityProviderUnsupportedError:
             return _failed(invocation, code="PROVIDER_UNSUPPORTED", state=SideEffectState.NOT_STARTED, start=start)
         except CapabilityProviderTimeoutError:
-            return _failed(invocation, code="PROVIDER_TIMEOUT", state=SideEffectState.UNKNOWN, start=start)
+            return _failed(invocation, code="PROVIDER_TIMEOUT", state=SideEffectState.NOT_STARTED, start=start)
         except CapabilityProviderTransportError:
             return _failed(
                 invocation,
                 code="PROVIDER_TRANSPORT_FAILED",
-                state=SideEffectState.UNKNOWN,
+                state=SideEffectState.NOT_STARTED,
                 start=start,
             )
         except Exception as exc:
+            classified = _classify_provider_failure(exc, dispatched=False)
+            if classified is not None:
+                return _failed(invocation, code=classified[0], state=classified[1], start=start)
             raise_capability_programming_error(exc)
 
         try:
@@ -634,15 +668,6 @@ class GenerateImageCapability:
                 output_format=output_format,
                 **request_options,
             )
-        except (CapabilityProviderTimeoutError, TimeoutError):
-            return _failed(invocation, code="PROVIDER_TIMEOUT", state=SideEffectState.UNKNOWN, start=start)
-        except (CapabilityProviderTransportError, ConnectionError):
-            return _failed(
-                invocation,
-                code="PROVIDER_TRANSPORT_FAILED",
-                state=SideEffectState.UNKNOWN,
-                start=start,
-            )
         except CapabilityProviderConstructionError:
             return _failed(
                 invocation,
@@ -653,6 +678,9 @@ class GenerateImageCapability:
         except CapabilityProviderUnsupportedError:
             return _failed(invocation, code="PROVIDER_UNSUPPORTED", state=SideEffectState.UNKNOWN, start=start)
         except Exception as exc:
+            classified = _classify_provider_failure(exc, dispatched=True)
+            if classified is not None:
+                return _failed(invocation, code=classified[0], state=classified[1], start=start)
             raise_capability_programming_error(exc)
 
         try:
@@ -712,6 +740,9 @@ class GenerateImageCapability:
         except (_PostflightFailure, _PreflightFailure) as failure:
             return _failed(invocation, code=failure.code, state=SideEffectState.UNKNOWN, start=start)
         except Exception as exc:
+            classified = _classify_provider_failure(exc, dispatched=False)
+            if classified is not None:
+                return _failed(invocation, code=classified[0], state=classified[1], start=start)
             raise_capability_programming_error(exc)
 
 
@@ -798,17 +829,20 @@ class EditImageCapability:
             return _failed(invocation, code="PROVIDER_UNSUPPORTED", state=SideEffectState.NOT_STARTED, start=start)
         except CapabilityProviderTimeoutError:
             _cleanup_edit_root(owned_root)
-            return _failed(invocation, code="PROVIDER_TIMEOUT", state=SideEffectState.UNKNOWN, start=start)
+            return _failed(invocation, code="PROVIDER_TIMEOUT", state=SideEffectState.NOT_STARTED, start=start)
         except CapabilityProviderTransportError:
             _cleanup_edit_root(owned_root)
             return _failed(
                 invocation,
                 code="PROVIDER_TRANSPORT_FAILED",
-                state=SideEffectState.UNKNOWN,
+                state=SideEffectState.NOT_STARTED,
                 start=start,
             )
         except Exception as exc:
             _cleanup_edit_root(owned_root)
+            classified = _classify_provider_failure(exc, dispatched=False)
+            if classified is not None:
+                return _failed(invocation, code=classified[0], state=classified[1], start=start)
             raise_capability_programming_error(exc)
 
         try:
@@ -833,19 +867,11 @@ class EditImageCapability:
         except CapabilityProviderUnsupportedError:
             _cleanup_edit_root(owned_root)
             return _failed(invocation, code="PROVIDER_UNSUPPORTED", state=SideEffectState.NOT_STARTED, start=start)
-        except (CapabilityProviderTimeoutError, TimeoutError):
-            _cleanup_edit_root(owned_root)
-            return _failed(invocation, code="PROVIDER_TIMEOUT", state=SideEffectState.UNKNOWN, start=start)
-        except (CapabilityProviderTransportError, ConnectionError):
-            _cleanup_edit_root(owned_root)
-            return _failed(
-                invocation,
-                code="PROVIDER_TRANSPORT_FAILED",
-                state=SideEffectState.UNKNOWN,
-                start=start,
-            )
         except Exception as exc:
             _cleanup_edit_root(owned_root)
+            classified = _classify_provider_failure(exc, dispatched=True)
+            if classified is not None:
+                return _failed(invocation, code=classified[0], state=classified[1], start=start)
             raise_capability_programming_error(exc)
 
         try:
@@ -857,6 +883,8 @@ class EditImageCapability:
             if not output_bytes:
                 raise _PostflightFailure("EMPTY_ARTIFACT")
             cost_minor, cost_known = _cost_minor(getattr(result, "cost_usd", None))
+            if bool(getattr(result, "cost_is_estimate", False)):
+                cost_known = False
             latency_ms = _elapsed_ms(start)
             output_mime = _validated_edit_output(output_bytes, source_size)
             artifact = CapabilityArtifact(
@@ -889,6 +917,9 @@ class EditImageCapability:
         except _PostflightFailure as failure:
             return _failed(invocation, code=failure.code, state=SideEffectState.UNKNOWN, start=start)
         except Exception as exc:
+            classified = _classify_provider_failure(exc, dispatched=False)
+            if classified is not None:
+                return _failed(invocation, code=classified[0], state=classified[1], start=start)
             raise_capability_programming_error(exc)
         finally:
             _cleanup_edit_root(owned_root)
@@ -944,15 +975,18 @@ class EvaluateImageCapability:
         except CapabilityProviderUnsupportedError:
             return _failed(invocation, code="PROVIDER_UNSUPPORTED", state=SideEffectState.NOT_STARTED, start=start)
         except CapabilityProviderTimeoutError:
-            return _failed(invocation, code="PROVIDER_TIMEOUT", state=SideEffectState.UNKNOWN, start=start)
+            return _failed(invocation, code="PROVIDER_TIMEOUT", state=SideEffectState.NOT_STARTED, start=start)
         except CapabilityProviderTransportError:
             return _failed(
                 invocation,
                 code="PROVIDER_TRANSPORT_FAILED",
-                state=SideEffectState.UNKNOWN,
+                state=SideEffectState.NOT_STARTED,
                 start=start,
             )
         except Exception as exc:
+            classified = _classify_provider_failure(exc, dispatched=False)
+            if classified is not None:
+                return _failed(invocation, code=classified[0], state=classified[1], start=start)
             raise_capability_programming_error(exc)
 
         try:
@@ -967,15 +1001,6 @@ class EvaluateImageCapability:
                 mode=mode,
                 vlm_model=vlm_model,
             )
-        except (CapabilityProviderTimeoutError, TimeoutError):
-            return _failed(invocation, code="PROVIDER_TIMEOUT", state=SideEffectState.UNKNOWN, start=start)
-        except (CapabilityProviderTransportError, ConnectionError):
-            return _failed(
-                invocation,
-                code="PROVIDER_TRANSPORT_FAILED",
-                state=SideEffectState.UNKNOWN,
-                start=start,
-            )
         except CapabilityProviderConstructionError:
             return _failed(
                 invocation,
@@ -986,10 +1011,15 @@ class EvaluateImageCapability:
         except CapabilityProviderUnsupportedError:
             return _failed(invocation, code="PROVIDER_UNSUPPORTED", state=SideEffectState.NOT_STARTED, start=start)
         except Exception as exc:
+            classified = _classify_provider_failure(exc, dispatched=True)
+            if classified is not None:
+                return _failed(invocation, code=classified[0], state=classified[1], start=start)
             raise_capability_programming_error(exc)
 
         try:
             output = _evaluation_output(result, secret=api_key)
+            if isinstance(result, EvalResult) and bool(getattr(result, "failed", False)):
+                raise _PostflightFailure("EVALUATION_FAILED")
             cost_value: object = result.cost_usd if isinstance(result, EvalResult) else (
                 result.get("cost_usd") if isinstance(result, dict) else None
             )
@@ -999,6 +1029,8 @@ class EvaluateImageCapability:
                 if failure.code == "INVALID_COST":
                     raise _PostflightFailure("INVALID_EVALUATION_RESULT") from None
                 raise
+            if isinstance(result, EvalResult) and bool(getattr(result, "cost_is_estimate", False)):
+                cost_known = False
             latency_ms = _elapsed_ms(start)
             model = options.get("model")
             model_value = model if isinstance(model, str) and model.strip() else (vlm_model or None)
@@ -1025,6 +1057,9 @@ class EvaluateImageCapability:
         except _PostflightFailure as failure:
             return _failed(invocation, code=failure.code, state=SideEffectState.UNKNOWN, start=start)
         except Exception as exc:
+            classified = _classify_provider_failure(exc, dispatched=False)
+            if classified is not None:
+                return _failed(invocation, code=classified[0], state=classified[1], start=start)
             raise_capability_programming_error(exc)
 
 
@@ -1040,6 +1075,10 @@ def _evaluation_output(result: EvalResult | dict, *, secret: str = "") -> dict[s
             "summary": result.summary,
             "tradition": result.tradition,
             "latency_ms": result.latency_ms,
+            "failed": bool(getattr(result, "failed", False)),
+            "error": getattr(result, "error", "") or None,
+            "mock": bool(getattr(result, "mock", False)),
+            "cost_is_estimate": bool(getattr(result, "cost_is_estimate", False)),
         }
     elif isinstance(result, dict):
         values = {

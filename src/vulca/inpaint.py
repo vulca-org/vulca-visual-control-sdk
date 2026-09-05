@@ -201,6 +201,7 @@ async def ainpaint(
 
     elapsed = int((time.monotonic() - t0) * 1000)
     cost = 0.0 if mock else 0.05
+    cost_is_estimate = not mock
 
     return InpaintResult(
         bbox=bbox,
@@ -212,6 +213,7 @@ async def ainpaint(
         tradition=tradition,
         latency_ms=elapsed,
         cost_usd=cost,
+        cost_is_estimate=cost_is_estimate,
     )
 
 
@@ -311,6 +313,7 @@ async def _ainpaint_with_mask(
             tradition=tradition,
             latency_ms=elapsed,
             cost_usd=0.0,
+            cost_is_estimate=False,
         )
 
     if provider != "openai":
@@ -344,7 +347,9 @@ async def _ainpaint_with_mask(
     Path(out_path).write_bytes(base64.b64decode(result.image_b64))
 
     elapsed = int((time.monotonic() - t0) * 1000)
-    cost = float((result.metadata or {}).get("cost_usd") or 0.05)
+    reported_cost = (result.metadata or {}).get("cost_usd")
+    cost = float(reported_cost) if reported_cost else 0.05
+    cost_is_estimate = not reported_cost
     return InpaintResult(
         bbox=edit_bbox,
         variants=[out_path],
@@ -355,6 +360,7 @@ async def _ainpaint_with_mask(
         tradition=tradition,
         latency_ms=elapsed,
         cost_usd=cost,
+        cost_is_estimate=cost_is_estimate,
     )
 
 
