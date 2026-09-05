@@ -1,5 +1,49 @@
 # Changelog
 
+## v0.24.2 (2026-09-05)
+
+Hardening release for the `vulca.capability` layer, driven by two independent
+reviews of v0.24.1 (see
+`docs/superpowers/specs/2026-09-05-vulca-0.24.2-capability-hardening-design.md`).
+No public name, field order, capability id or version changed; the price table
+content and its hash are unchanged.
+
+### Fixes
+
+- Provider failures are classified instead of escaping as programming errors:
+  `httpx.TimeoutException` maps to `PROVIDER_TIMEOUT`, `httpx.TransportError`
+  and `ConnectionError` to `PROVIDER_TRANSPORT_FAILED`, and HTTP rejections
+  (`httpx.HTTPStatusError`, or the new typed `ProviderRequestRejected` the
+  OpenAI provider now raises for 400/402/403/429) to the new `PROVIDER_REJECTED`
+  code. A rejection with a 4xx status reports `NOT_STARTED`; 5xx reports
+  `UNKNOWN`. Pre-flight timeouts and transport failures (before any provider
+  call) now report `NOT_STARTED` instead of `UNKNOWN`.
+- The evaluate cell carries `EvalResult.failed`, `error`, `mock` and
+  `cost_is_estimate` through to its output; a failed evaluation is a `FAILED`
+  result with `EVALUATION_FAILED`, never a score; an estimated cost is reported
+  as `costKnown: false`.
+- `InpaintResult` gained `cost_is_estimate` (default `True`); the edit cell no
+  longer reports the 0.05 fallback constant as a known cost.
+- `adapt_static` crops to the target aspect before resizing (a 1 x N source
+  covering a square no longer requests a gigapixel intermediate), rejects
+  requests above an 8192 x 8192 pixel budget as `INVALID_DIMENSIONS`, and
+  every image decoder treats `PIL.Image.DecompressionBombError` as
+  `CORRUPT_ARTIFACT` instead of raising.
+- `get_openai_image_price_schedule` returns a deep copy, so a caller mutating
+  `raw` can no longer change later estimates, and the estimator verifies the
+  live schedule hash on every call.
+- The mask inpaint path guards a provider result whose `metadata` is `None`.
+
+### Verification
+
+- New `tests/test_capability_hardening.py`: 17 tests, of which 16 fail on
+  v0.24.1 and pass here.
+- Capability release gate plus the tests for every changed module
+  (`test_inpaint.py`, `test_openai_provider.py`, `test_openai_price_schedule.py`,
+  `test_provider_retry.py`, `test_package.py`): 318 passed.
+- `python -m mypy src/vulca/capability`: no issues (mypy 1.20 and 2.3.1).
+- `ruff check src/ tests/`: passed.
+
 ## v0.24.1 (2026-09-05)
 
 First published release of the 0.24 line. Adds the canonical `vulca.capability`

@@ -81,14 +81,14 @@ def test_canonical_capability_wheel_contains_isolated_import_surface(tmp_path: P
         }
         assert capability_members == EXPECTED_WHEEL_FILES
 
-        wheel_metadata = wheel.read("vulca-0.24.1.dist-info/WHEEL")
-        distribution_metadata = wheel.read("vulca-0.24.1.dist-info/METADATA")
+        wheel_metadata = wheel.read("vulca-0.24.2.dist-info/WHEEL")
+        distribution_metadata = wheel.read("vulca-0.24.2.dist-info/METADATA")
 
     assert b"Generator: hatchling 1.31.0" in wheel_metadata.splitlines()
     parsed_metadata = BytesParser(policy=default).parsebytes(distribution_metadata)
     assert parsed_metadata["Metadata-Version"] == "2.4"
     assert parsed_metadata["Name"] == "vulca"
-    assert parsed_metadata["Version"] == "0.24.1"
+    assert parsed_metadata["Version"] == "0.24.2"
 
     install_dir = tmp_path / "installed-wheel"
     install_dir.mkdir()
@@ -148,7 +148,7 @@ resolved = sorted(
     (capability.manifest.capability_id, capability.manifest.version)
     for capability in registry._capabilities.values()
 )
-assert importlib.metadata.version("vulca") == vulca.__version__ == "0.24.1"
+assert importlib.metadata.version("vulca") == vulca.__version__ == "0.24.2"
 assert Path(importlib.metadata.distribution("vulca").locate_file("")).resolve().is_relative_to(install_dir)
 assert resolved == sorted([
     ("vulca.image.adapt_static", "1.0.0"),
