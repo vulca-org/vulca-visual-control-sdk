@@ -1,5 +1,62 @@
 # Changelog
 
+## v0.24.1 (2026-09-05)
+
+First published release of the 0.24 line. Adds the canonical `vulca.capability`
+contract layer that the vulca-platform native DSH runtime consumes as its
+Python sidecar. Versions 0.24.0 and 0.24.1 were bumped on the development
+branch in August 2026 without a PyPI release; this release is byte-identical
+to the wheel vulca-platform has vendored since 2026-08-14.
+
+### Added
+
+- `vulca.capability`: exact-version capability contracts (`CapabilityManifest`,
+  `CapabilityInvocation`, `CapabilityResult`, `CapabilityRegistry`,
+  `SideEffectState`, `CapabilityStatus`, `CapabilityArtifact`), envelope and
+  result-integrity validation, and a `builtin_registry` exposing the campaign
+  static-creative production cells `vulca.image.generate`, `vulca.image.edit`,
+  `vulca.image.evaluate`, `vulca.image.adapt_static`,
+  `vulca.image.compose_static` and `vulca.image.validate_static`, all at
+  `1.0.0`. The core contract types are re-exported from the package root.
+- `vulca.providers.price_schedule`: frozen OpenAI image price schedule
+  `openai.image.pricing@2026-08-14` with `estimate_openai_image_cost` for
+  reservation ceilings, re-exported from `vulca.providers`.
+- OpenAI provider: `gpt-image-2-2026-04-21` model binding, configurable
+  `timeout` and `max_retries`, and explicit rejection of unsupported image
+  formats.
+- CI: capability release gate (`mypy src/vulca/capability`, the
+  contract/wheel/builtin/static test files) and `pip check`; the build front
+  end and back end are pinned to `build==1.4.3` and `hatchling==1.31.0` so the
+  wheel is reproducible.
+
+### Fixes
+
+- Preserved the unreadable-crop error contract in `vulca.inpaint` and the
+  studio inpaint phase.
+- Hardened capability contract validation, result integrity and envelope edge
+  cases; locked the exact capability dataclass contracts in tests.
+
+### Docs
+
+- Added the 2026-08-11 accountable creative organization runtime design and
+  plan series, marked historical: Job Runtime ownership moved to the
+  vulca-platform native DSH kernel on 2026-08-14, and the capability contracts
+  (plan 01) remain canonical.
+
+### Verification
+
+- `python -m mypy src/vulca/capability`: no issues found in 6 source files.
+- Capability release gate (`tests/test_capability_contract.py`,
+  `tests/test_capability_builtin.py`, `tests/test_capability_static.py`):
+  195 passed.
+- `tests/test_capability_wheel.py` (two `--no-isolation` builds must hash
+  identically): passed.
+- Wheel built from this tree with `hatchling==1.31.0` / `build==1.4.3` has
+  SHA-256 `7304658e4459a1a6d9c582113a4b7c0b181883e3a9bd0871da07ca2ce3536f9d`,
+  identical to `wenxin-backend/wheelhouse/vulca-0.24.1-py3-none-any.whl` in
+  vulca-platform.
+- `twine check` on wheel and sdist: passed.
+
 ## v0.23.1 (2026-05-11)
 
 Patch release for the NB2/Gemini masked-edit adapter.
