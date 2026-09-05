@@ -233,7 +233,20 @@ class Engine:
 
         summary = _build_summary(weighted_total, resolved_tradition, dimensions, mode)
 
-        cost = _estimate_cost(skills or [])
+        # A mock run calls no API, so it has no cost to report. Otherwise prefer
+        # what the provider actually charged; _estimate_cost is a constant and
+        # must not be presented as a measurement.
+        measured = vlm_result.get("_cost_usd")
+        if self.mock:
+            cost, cost_is_estimate = 0.0, False
+        elif measured is not None:
+            cost, cost_is_estimate = float(measured), False
+        else:
+            cost, cost_is_estimate = _estimate_cost(skills or []), True
+
+        # score_image swallows every exception and returns zeros; carry that
+        # fact onto the result so callers are not handed a fabricated verdict.
+        scoring_error = str(vlm_result.get("error") or "")
 
         return EvalResult(
             score=round(weighted_total, 4),
@@ -256,6 +269,10 @@ class Engine:
             skills=skill_results,
             intent_confidence=intent_confidence,
             cost_usd=cost,
+            cost_is_estimate=cost_is_estimate,
+            mock=self.mock,
+            failed=bool(scoring_error),
+            error=scoring_error,
             raw=vlm_result,
         )
 

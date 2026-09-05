@@ -183,6 +183,8 @@ async def _create_local(
         eval_mode=eval_mode,
         latency_ms=output.total_latency_ms,
         cost_usd=output.total_cost_usd,
+        provider=output.original_provider or provider,
+        mock=(output.original_provider or provider) == "mock",
         raw=output.to_dict(),
     )
 
@@ -237,6 +239,8 @@ async def _create_remote(
         recommendations=data.get("recommendations") or [],
         latency_ms=data.get("latency_ms", 0),
         cost_usd=data.get("cost_usd", 0.0),
+        provider=data.get("provider", ""),
+        mock=data.get("provider", "") == "mock",
         raw=data,
     )
 

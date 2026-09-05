@@ -83,6 +83,34 @@ class EvalResult:
     cost_usd: float = 0.0
     """Estimated API cost in USD."""
 
+    cost_is_estimate: bool = True
+    """True when :attr:`cost_usd` is a constant rather than measured usage.
+
+    ``_estimate_cost`` returns a fixed figure that does not depend on the call,
+    and printed the same value for a mock run and a real one. Defaulting to True
+    means a caller has to be told explicitly that a cost was measured, rather
+    than inferring it from a number that looks precise.
+    """
+
+    failed: bool = False
+    """True when scoring raised and the dimensions below are not measurements.
+
+    ``_vlm.score_image`` catches every exception and returns a complete payload
+    with all five dimensions at 0.0. Without this flag that crash is delivered
+    as a confident verdict of zero, which is worse than no answer at all.
+    """
+
+    error: str = ""
+    """The scoring error, when :attr:`failed` is set."""
+
+    mock: bool = False
+    """True when the scores are synthetic and no model was called.
+
+    Carried on the result so that every renderer and every downstream report can
+    say so. A mock score sheet is shaped exactly like a real one; without this
+    flag nothing downstream can tell them apart.
+    """
+
     raw: dict = field(default_factory=dict)
     """Raw response data for advanced usage."""
 
@@ -177,6 +205,16 @@ class CreateResult:
     cost_usd: float = 0.0
     """Estimated API cost in USD."""
 
+    provider: str = ""
+    """Image provider that produced the artefact, as resolved at run time."""
+
+    mock: bool = False
+    """True when the artefact is synthetic and no generation API was called.
+
+    ``create`` picks a provider by name and ``mock`` is one of the choices, so a
+    run can be entirely synthetic without any flag being passed. The result
+    carries that fact rather than leaving it to the caller to infer.
+    """
 
     raw: dict = field(default_factory=dict)
     """Raw response data."""
