@@ -1,7 +1,10 @@
 # VULCA
 
 <p align="center">
-  <img src="assets/brand/vulca-logo.svg" alt="Vulca logo" width="240">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/brand/vulca-logo-dark.svg">
+    <img src="assets/brand/vulca-logo.svg" alt="Vulca logo" width="300">
+  </picture>
 </p>
 
 [![PyPI](https://img.shields.io/pypi/v/vulca.svg)](https://pypi.org/project/vulca/)
